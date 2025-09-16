@@ -6,13 +6,81 @@ export default function Topbar() {
   const inputRef = useRef(null)
   const { importFromZip, toggleSidebar, logout, globalUserName, setGlobalName, importStats, fetchChatsFromAPI } = useChat()
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
 
   const handleLogout = () => {
     if (logout) {
       logout()
     } else {
       localStorage.clear()
-      window.location.href = '/'
+      window.location.href = '/login'
+    }
+  }
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    
+    if (!file) return
+
+    setIsUploading(true)
+    setUploadProgress(0)
+
+    try {
+      const token = localStorage.getItem('auth_token')
+      
+      // Simulate progress for better UX
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval)
+            return 90
+          }
+          return prev + Math.random() * 30
+        })
+      }, 200)
+
+      if (token) {
+        const result = await apiUploadZip(file, token)
+        
+        // Complete the progress
+        clearInterval(progressInterval)
+        setUploadProgress(100)
+        
+        const { addedChats, updatedChats, addedMessages, skippedMessages, savedMedia } = result || {}
+        
+        // Show completion briefly before hiding
+        setTimeout(() => {
+          setIsUploading(false)
+          setUploadProgress(0)
+        }, 500)
+        
+        // alert(`Upload complete\nAdded chats: ${addedChats ?? 0}\nUpdated chats: ${updatedChats ?? 0}\nAdded messages: ${addedMessages ?? 0}\nSkipped messages: ${skippedMessages ?? 0}\nSaved media: ${savedMedia ?? 0}`)
+        
+        // Refresh chat list after successful upload
+        await fetchChatsFromAPI()
+      } else {
+        await importFromZip(file)
+        clearInterval(progressInterval)
+        setUploadProgress(100)
+        setTimeout(() => {
+          setIsUploading(false)
+          setUploadProgress(0)
+        }, 500)
+      }
+    } catch (err) {
+      setIsUploading(false)
+      setUploadProgress(0)
+      
+      if (err?.status === 401) {
+        alert('Session expired. Please log in again.')
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        window.location.reload()
+        return
+      }
+      alert(err.message || 'Failed to import/upload ZIP')
     }
   }
 
@@ -56,39 +124,27 @@ export default function Topbar() {
             ref={inputRef}
             type="file"
             accept=".zip"
-            onChange={async (e) => {
-              const file = e.target.files?.[0]
-              e.target.value = ''
-              try {
-                const token = localStorage.getItem('auth_token')
-                if (token) {
-                  const result = await apiUploadZip(file, token)
-                  const { addedChats, updatedChats, addedMessages, skippedMessages, savedMedia } = result || {}
-                  alert(`Upload complete\nAdded chats: ${addedChats ?? 0}\nUpdated chats: ${updatedChats ?? 0}\nAdded messages: ${addedMessages ?? 0}\nSkipped messages: ${skippedMessages ?? 0}\nSaved media: ${savedMedia ?? 0}`)
-                  // Refresh chat list after successful upload
-                  await fetchChatsFromAPI()
-                } else {
-                  await importFromZip(file)
-                }
-              } catch (err) {
-                if (err?.status === 401) {
-                  alert('Session expired. Please log in again.')
-                  localStorage.removeItem('auth_token')
-                  localStorage.removeItem('auth_user')
-                  window.location.reload()
-                  return
-                }
-                alert(err.message || 'Failed to import/upload ZIP')
-              }
-            }}
+            onChange={handleFileUpload}
             style={{ display: 'none' }}
+            disabled={isUploading}
           />
-          <button onClick={() => inputRef.current?.click()}>
-            Import ZIP
+          <button 
+            onClick={() => !isUploading && inputRef.current?.click()}
+            disabled={isUploading}
+            className={isUploading ? 'uploading' : ''}
+          >
+            {isUploading ? (
+              <>
+                <div className="spinner"></div>
+                Uploading...
+              </>
+            ) : (
+              'Import ZIP'
+            )}
           </button>
 
           {/* Modern Red Logout Button */}
-          <button className="logout-btn" onClick={() => setShowLogoutModal(true)}>
+          <button className="logout-btn" onClick={() => setShowLogoutModal(true)} disabled={isUploading}>
             <svg xmlns="http://www.w3.org/2000/svg" 
               width="16" height="16" fill="currentColor"
               viewBox="0 0 16 16" style={{ marginRight: '6px' }}>
@@ -100,8 +156,23 @@ export default function Topbar() {
         </div>
       </div>
 
+      {/* Upload Progress Bar */}
+      {isUploading && (
+        <div className="progress-container">
+          <div className="progress-bar">
+            <div 
+              className="progress-fill" 
+              style={{ width: `${uploadProgress}%` }}
+            ></div>
+          </div>
+          <div className="progress-text">
+            Uploading ZIP file... {Math.round(uploadProgress)}%
+          </div>
+        </div>
+      )}
+
       {/* Import Statistics Notification */}
-      {importStats && (
+      {importStats && !isUploading && (
         <div className="import-notification">
           <div className="notification-content">
             <h4>Import Complete!</h4>
@@ -171,6 +242,46 @@ export default function Topbar() {
           gap: 12px;
         }
         
+        .actions button {
+          background: #00b894;
+          color: white;
+          padding: 8px 14px;
+          border-radius: 6px;
+          border: none;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        
+        .actions button:hover:not(:disabled) {
+          background: #019c7d;
+        }
+        
+        .actions button:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        
+        .actions button.uploading {
+          background: #019c7d;
+        }
+        
+        .spinner {
+          width: 14px;
+          height: 14px;
+          border: 2px solid rgba(255, 255, 255, 0.3);
+          border-top: 2px solid white;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        
         .user-name-section input {
           transition: border-color 0.2s ease;
         }
@@ -181,7 +292,7 @@ export default function Topbar() {
         }
         
         .logout-btn {
-          background: #ff4d4d;
+          background: #ff4d4d !important;
           color: white;
           padding: 8px 14px;
           border-radius: 6px;
@@ -191,8 +302,64 @@ export default function Topbar() {
           cursor: pointer;
           transition: background 0.3s ease;
         }
-        .logout-btn:hover {
-          background: #e04343;
+        .logout-btn:hover:not(:disabled) {
+          background: #e04343 !important;
+        }
+        .logout-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        /* Progress Bar Styles */
+        .progress-container {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          background: rgba(15, 27, 33, 0.95);
+          padding: 12px 20px;
+          z-index: 999;
+          border-bottom: 1px solid #0e171c;
+        }
+        
+        .progress-bar {
+          width: 100%;
+          height: 6px;
+          background: #0e171c;
+          border-radius: 3px;
+          overflow: hidden;
+          margin-bottom: 8px;
+        }
+        
+        .progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #00b894, #00d4aa);
+          border-radius: 3px;
+          transition: width 0.3s ease;
+          position: relative;
+        }
+        
+        .progress-fill::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          bottom: 0;
+          right: 0;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+          animation: shimmer 1.5s infinite;
+        }
+        
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+        
+        .progress-text {
+          color: #cfe2ea;
+          font-size: 0.9rem;
+          text-align: center;
+          font-weight: 500;
         }
 
         /* Modal Styles */
@@ -312,4 +479,4 @@ export default function Topbar() {
       `}</style>
     </>
   )
-}
+} 
