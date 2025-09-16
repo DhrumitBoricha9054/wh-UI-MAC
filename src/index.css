@@ -1,0 +1,50 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  color: #e9edef;
+  background-color: #0b141a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;        /* ✅ make sure it never exceeds screen */
+  margin: 0;
+  padding: 0;
+  overflow: hidden;   /* ✅ prevent page from moving when zooming */
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  overflow: hidden;   /* ✅ lock body scrolling */
+}
+
+button {
+  border-radius: 10px;
+  border: 1px solid #0e171c;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  background: #0f1b21;
+  color: #d9e3ea;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: #1c2a31;
+  background: #122129;
+}
+
+button:focus-visible {
+  outline: 2px solid #00a884;
+  outline-offset: 2px;
+}

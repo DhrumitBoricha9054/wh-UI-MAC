@@ -1,0 +1,167 @@
+/* Design tokens */
+:root {
+  --bg: #0b141a;
+  --panel: #111b21;
+  --panel-2: #1f2c33;
+  --accent: #00a884;
+  --text: #e9edef;
+  --muted: #8696a0;
+}
+
+/* Layout */
+html, body, #root {
+  height: 100%;
+}
+
+#root { margin: 0; padding: 0; }
+
+.app {
+  display: grid;
+  grid-template-rows: 64px 1fr;
+  height: 100vh;
+  background: linear-gradient(180deg, #0b141a 0%, #111b21 100%);
+  color: var(--text);
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--panel-2);
+  border-bottom: 1px solid #0e171c;
+  backdrop-filter: saturate(1.1) blur(6px);
+  z-index: 20;
+}
+
+.topbar .title { font-weight: 700; letter-spacing: 0.2px; }
+.topbar .actions { display: flex; gap: 8px; align-items: center; }
+
+.icon-button {
+  display: none;
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid #0e171c;
+  align-items: center; justify-content: center;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  height: 100%;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.sidebar {
+  border-right: 1px solid #0e171c;
+  background: var(--panel);
+  overflow: auto;
+}
+
+.sidebar .section { padding: 12px 16px; color: var(--muted); font-size: 12px; }
+
+.sidebar .chat-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid #172229;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+.sidebar .chat-item:hover { background: #152129; }
+.sidebar .chat-item.active { background: #23323b; }
+
+.chat-window {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0; /* allow inner scroller */
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.messages input, .messages textarea {
+  pointer-events: auto;
+}
+
+.bubble {
+  max-width: min(72ch, 85%);
+  width: fit-content;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.4;
+  background: #202c33;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.2);
+}
+
+.bubble.me {
+  align-self: flex-end;
+  background: #005c4b;
+}
+.bubble.other { align-self: flex-start; background: #1e2a31; }
+
+.meta {
+  display: flex;
+  gap: 8px;
+  opacity: 0.7;
+  font-size: 11px;
+  margin-top: 6px;
+}
+.meta.me { justify-content: flex-end; }
+.meta.other { justify-content: flex-start; }
+
+.media { margin-top: 8px; border-radius: 10px; overflow: hidden; max-width: 320px; }
+.media img, .media video, .media audio { width: 100%; height: auto; display: block; background: #000; }
+
+.empty-state { height: 100%; display: grid; place-items: center; color: var(--muted); }
+
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  z-index: 15; display: none;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 900px) {
+  .icon-button { display: inline-flex; }
+  .layout { grid-template-columns: 1fr; }
+  .sidebar {
+    position: fixed; top: 64px; left: 0; bottom: 0; width: 88vw; max-width: 420px;
+    transform: translateX(-100%);
+    transition: transform 220ms ease;
+    z-index: 20;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .overlay.open { display: block; }
+}
+
+/* Fullscreen media viewer */
+.media-viewer-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(0,0,0,0.85);
+  display: grid; place-items: center;
+}
+.media-viewer { max-width: 92vw; max-height: 88vh; }
+.media-viewer img, .media-viewer video, .media-viewer audio { max-width: 92vw; max-height: 88vh; }
+.media-viewer-close {
+  position: fixed; top: 12px; right: 12px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff; font-size: 18px; width: 36px; height: 36px; border-radius: 999px;
+}
+.media-viewer-nav { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 16px; align-items: center; color: #cfd8dc; }
+.media-viewer-nav button { width: 40px; height: 40px; border-radius: 10px; background: rgba(255,255,255,0.08); color: #fff; border: 1px solid rgba(255,255,255,0.2); font-size: 22px; }
+.media-viewer-nav .counter { font-size: 14px; opacity: 0.85; }

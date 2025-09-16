@@ -1,0 +1,250 @@
+/* Background */
+.login-container {
+  height: 100vh;
+  width: 100%;
+  background: linear-gradient(135deg, #d6f5e6, #bfe8d5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  font-family: "Inter", sans-serif;
+}
+
+/* Decorative circles */
+.circle {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.2;
+  filter: blur(80px);
+}
+.circle1 {
+  width: 250px;
+  height: 250px;
+  background: #9fd5b6;
+  top: -80px;
+  left: -80px;
+}
+.circle2 {
+  width: 350px;
+  height: 350px;
+  background: #a8e0c0;
+  bottom: -120px;
+  right: -120px;
+}
+.circle3 {
+  width: 200px;
+  height: 200px;
+  background: #7fcf9c;
+  top: 20%;
+  left: 70%;
+}
+.circle4 {
+  width: 180px;
+  height: 180px;
+  background: #b3e6cf;
+  bottom: 25%;
+  left: 15%;
+}
+
+/* Card container */
+.login-card {
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  display: flex;
+  overflow: hidden;
+  width: 850px;
+  max-width: 95%;
+  min-height: 450px;
+  z-index: 1;
+}
+
+/* Left side */
+.login-left {
+  flex: 1;
+  background: linear-gradient(135deg, #ccefe0, #b3e6cf);
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: #1d3b2a;
+}
+.login-left h1 {
+  font-size: 2rem;
+  margin-bottom: 15px;
+}
+.login-left p {
+  font-size: 1rem;
+  line-height: 1.6;
+  opacity: 0.9;
+}
+
+/* Right side */
+.login-right {
+  flex: 1;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.login-right h2 {
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+  color: #1d3b2a;
+}
+
+/* Inputs */
+.login-right input {
+  width: 100%;
+  padding: 12px 15px;
+  margin-bottom: 15px;
+  border-radius: 10px;
+  border: 1px solid #d3d3d3;
+  font-size: 1rem;
+  outline: none;
+}
+.login-right input:focus {
+  border-color: #5cbf8a;
+  box-shadow: 0 0 5px rgba(92, 191, 138, 0.3);
+}
+
+/* Password eye */
+.password-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.password-wrapper input {
+  padding-right: 40px; /* leave space for eye */
+  line-height: 1.4;   /* make sure baseline is consistent */
+}
+
+.eye-icon {
+  position: absolute;
+  right: 12px;
+  top: 0;
+  bottom: 0;
+  margin: auto;       /* perfect vertical centering */
+  cursor: pointer;
+  font-size: 20px;    /* match input text size */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+
+
+/* Button */
+.login-right button {
+  width: 100%;
+  padding: 12px;
+  background: #5cbf8a;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 5px;
+  transition: background 0.3s;
+}
+.login-right button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.login-right button:hover:not(:disabled) {
+  background: #4da876;
+}
+
+/* Error */
+.error {
+  color: red;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+}
+
+/* Footer */
+.login-footer {
+  position: absolute;
+  bottom: 15px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #1d3b2a;
+  width: 100%;
+}
+.login-footer a {
+  color: #2d8055;
+  text-decoration: none;
+}
+.login-footer a:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------- */
+/* Responsive styles */
+/* ------------------------- */
+@media (max-width: 768px) {
+  .login-card {
+    flex-direction: column; /* stack left + right */
+    width: 95%;
+    min-height: auto;
+  }
+
+  .login-left {
+    padding: 24px;
+    text-align: center;
+  }
+  .login-left h1 {
+    font-size: 1.6rem;
+  }
+  .login-left p {
+    font-size: 0.95rem;
+  }
+
+  .login-right {
+    padding: 24px;
+  }
+  .login-right h2 {
+    font-size: 1.3rem;
+  }
+
+  .login-right input {
+    font-size: 0.95rem;
+    padding: 10px 12px;
+  }
+
+  .login-right button {
+    padding: 10px;
+    font-size: 0.95rem;
+  }
+
+  .circle {
+    filter: blur(50px);
+  }
+  .circle1,
+  .circle2,
+  .circle3,
+  .circle4 {
+    width: 150px;
+    height: 150px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-left h1 {
+    font-size: 1.3rem;
+  }
+  .login-left p {
+    font-size: 0.85rem;
+  }
+
+  .login-right h2 {
+    font-size: 1.1rem;
+  }
+
+  .login-footer {
+    font-size: 0.75rem;
+    padding: 0 10px;
+  }
+}
