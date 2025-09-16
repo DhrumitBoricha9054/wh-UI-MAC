@@ -2,12 +2,33 @@ import { useRef, useState } from 'react'
 import { useChat } from '../state/ChatContext'
 import { apiUploadZip } from '../lib/api'
 
+
+async function apiChangePassword(oldPassword, newPassword, token) {
+  const res = await fetch('https://whatsapp-api.otix.in/api/change-password', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify({ oldPassword, newPassword })
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data?.error || 'Failed to change password')
+  return data
+}
+
 export default function Topbar() {
   const inputRef = useRef(null)
   const { importFromZip, toggleSidebar, logout, globalUserName, setGlobalName, importStats, fetchChatsFromAPI } = useChat()
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [showChangePwdModal, setShowChangePwdModal] = useState(false)
+  const [oldPwd, setOldPwd] = useState('')
+  const [newPwd, setNewPwd] = useState('')
+  const [pwdLoading, setPwdLoading] = useState(false)
+  const [pwdError, setPwdError] = useState('')
+  const [pwdSuccess, setPwdSuccess] = useState('')
 
   const handleLogout = () => {
     if (logout) {
@@ -15,6 +36,30 @@ export default function Topbar() {
     } else {
       localStorage.clear()
       window.location.href = '/login'
+    }
+  }
+
+const handleChangePassword = async () => {
+    setPwdError('')
+    setPwdSuccess('')
+    setPwdLoading(true)
+    try {
+      const token = localStorage.getItem('auth_token')
+      const result = await apiChangePassword(oldPwd, newPwd, token)
+      if (result.ok) {
+        setPwdSuccess('Password changed successfully!')
+        setOldPwd('')
+        setNewPwd('')
+        
+        setTimeout(() => setShowChangePwdModal(false), 1200)
+        setTimeout(() => setPwdSuccess(''), 1150)
+      } else {
+        setPwdError('Failed to change password')
+      }
+    } catch (err) {
+      setPwdError(err.message || 'Failed to change password')
+    } finally {
+      setPwdLoading(false)
     }
   }
 
@@ -142,7 +187,13 @@ export default function Topbar() {
               'Import ZIP'
             )}
           </button>
-
+<button 
+          onClick={() => setShowChangePwdModal(true)}
+          style={{ background: '#ffd600', color: '#222', fontWeight: 500 }}
+          disabled={isUploading}
+        >
+          Change Password
+        </button>
           {/* Modern Red Logout Button */}
           <button className="logout-btn" onClick={() => setShowLogoutModal(true)} disabled={isUploading}>
             <svg xmlns="http://www.w3.org/2000/svg" 
@@ -155,6 +206,45 @@ export default function Topbar() {
           </button>
         </div>
       </div>
+{/* Change Password Modal */}
+      {showChangePwdModal && (
+  <div className="modal-overlay">
+    <div className="modern-modal">
+      <div className="modal-icon-large">
+        {/* Lock icon SVG */}
+        <svg width="48" height="48" fill="#ffd600" viewBox="0 0 24 24">
+          <path d="M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6-7V8a6 6 0 0 0-12 0v2a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-7a3 3 0 0 0-3-3zm-8-2a4 4 0 0 1 8 0v2H6V8zm11 12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v7z"/>
+        </svg>
+      </div>
+      <h2>Change Password</h2>
+      <div className="modal-fields">
+        <input
+          type="password"
+          placeholder="Old password"
+          value={oldPwd}
+          onChange={e => setOldPwd(e.target.value)}
+          disabled={pwdLoading}
+        />
+        <input
+          type="password"
+          placeholder="New password"
+          value={newPwd}
+          onChange={e => setNewPwd(e.target.value)}
+          disabled={pwdLoading}
+        />
+        {pwdError && <div className="modal-error">{pwdError}</div>}
+        {pwdSuccess && <div className="modal-success">{pwdSuccess}</div>}
+      </div>
+      <div className="modal-actions">
+        <button className="cancel-btn" onClick={() => setShowChangePwdModal(false)} disabled={pwdLoading}>Cancel</button>
+        <button className="confirm-btn" onClick={handleChangePassword} disabled={pwdLoading || !oldPwd || !newPwd}>
+          {pwdLoading ? 'Changing...' : 'Change Password'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
 
       {/* Upload Progress Bar */}
       {isUploading && (
@@ -471,6 +561,103 @@ export default function Topbar() {
           background: #f8d7da;
           color: #721c24;
         }
+
+       /* Modern Change Password Modal Styles */
+.modern-modal {
+  background: #fff;
+  border-radius: 28px;
+  padding: 48px 32px 32px 32px;
+  width: 440px;
+  max-width: 95vw;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+  text-align: center;
+  animation: fadeIn 0.3s;
+  position: relative;
+}
+.modal-icon-large {
+  margin-bottom: 12px;
+}
+.modern-modal h2 {
+  margin: 0 0 24px 0;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #263238;
+  letter-spacing: 0.5px;
+}
+.modal-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-bottom: 28px;
+}
+.modern-modal input[type="password"] {
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: none;
+  background: #333;
+  color: #fff;
+  font-size: 1.15rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  outline: none;
+  transition: box-shadow 0.2s;
+}
+.modern-modal input[type="password"]::placeholder {
+  color: #bdbdbd;
+  font-size: 1.1rem;
+}
+.modern-modal input[type="password"]:focus {
+  box-shadow: 0 0 0 2px #ffd600;
+}
+.modal-error {
+  color: #d32f2f;
+  font-size: 1rem;
+  margin-top: 2px;
+}
+.modal-success {
+  color: #388e3c;
+  font-size: 1rem;
+  margin-top: 2px;
+}
+.modern-modal .modal-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 12px;
+}
+.modern-modal .cancel-btn {
+  background: #e0e0e0;
+  color: #bdbdbd;
+  border: none;
+  padding: 16px 0;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 1.15rem;
+  flex: 1;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.modern-modal .cancel-btn:enabled {
+  color: #333;
+}
+.modern-modal .cancel-btn:hover:enabled {
+  background: #ccc;
+}
+.modern-modal .confirm-btn {
+  background: #ff4d4d;
+  color: #fff;
+  border: none;
+  padding: 16px 0;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 1.15rem;
+  flex: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+  transition: background 0.2s;
+}
+.modern-modal .confirm-btn:hover:enabled {
+  background: #e04343;
+}
         
         @keyframes slideInRight {
           from { transform: translateX(100%); opacity: 0; }
