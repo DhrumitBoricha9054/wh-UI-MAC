@@ -35,7 +35,7 @@ export default function Topbar() {
       logout()
     } else {
       localStorage.clear()
-      window.location.href = '/login'
+      window.location.href = '/'
     }
   }
 
