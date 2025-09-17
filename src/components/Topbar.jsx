@@ -29,6 +29,7 @@ export default function Topbar() {
   const [pwdLoading, setPwdLoading] = useState(false)
   const [pwdError, setPwdError] = useState('')
   const [pwdSuccess, setPwdSuccess] = useState('')
+  const [zipResponse, setZipResponse] = useState(null)
 
   const handleLogout = () => {
     if (logout) {
@@ -88,21 +89,14 @@ const handleChangePassword = async () => {
 
       if (token) {
         const result = await apiUploadZip(file, token)
-        
         // Complete the progress
         clearInterval(progressInterval)
         setUploadProgress(100)
-        
-        const { addedChats, updatedChats, addedMessages, skippedMessages, savedMedia } = result || {}
-        
-        // Show completion briefly before hiding
+        setZipResponse(result)
         setTimeout(() => {
           setIsUploading(false)
           setUploadProgress(0)
         }, 500)
-        
-        // alert(`Upload complete\nAdded chats: ${addedChats ?? 0}\nUpdated chats: ${updatedChats ?? 0}\nAdded messages: ${addedMessages ?? 0}\nSkipped messages: ${skippedMessages ?? 0}\nSaved media: ${savedMedia ?? 0}`)
-        
         // Refresh chat list after successful upload
         await fetchChatsFromAPI()
       } else {
@@ -130,7 +124,7 @@ const handleChangePassword = async () => {
   }
 
   return (
-    <>
+    <div>
       <div className="topbar">
         <button className="icon-button" aria-label="Open sidebar" onClick={toggleSidebar}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -139,11 +133,9 @@ const handleChangePassword = async () => {
               stroke="#cfd8dc" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </button>
-
         <div className="title">WhatsApp Chat Viewer</div>
-
         <div className="user-name-section">
-          <label htmlFor="globalUserName" style={{ color: '#8696a0', fontSize: 12, marginRight: 8 }}>
+          <label htmlFor="globalUserName" className="user-label">
             Your name:
           </label>
           <input
@@ -151,19 +143,9 @@ const handleChangePassword = async () => {
             placeholder="Type exactly as it appears in chat"
             value={globalUserName || ''}
             onChange={(e) => setGlobalName(e.target.value)}
-            style={{
-              background: '#0f1b21', 
-              border: '1px solid #0e171c', 
-              color: '#cfe2ea',
-              borderRadius: 8, 
-              padding: '6px 8px', 
-              fontSize: 12, 
-              width: 200,
-              marginRight: 16
-            }}
+            className="user-input"
           />
         </div>
-
         <div className="actions">
           <input
             ref={inputRef}
@@ -187,13 +169,13 @@ const handleChangePassword = async () => {
               'Import ZIP'
             )}
           </button>
-<button 
-          onClick={() => setShowChangePwdModal(true)}
-          style={{ background: '#ffd600', color: '#222', fontWeight: 500 }}
-          disabled={isUploading}
-        >
-          Change Password
-        </button>
+          <button 
+            onClick={() => setShowChangePwdModal(true)}
+            className="change-pwd-btn"
+            disabled={isUploading}
+          >
+            Change Password
+          </button>
           {/* Modern Red Logout Button */}
           <button className="logout-btn" onClick={() => setShowLogoutModal(true)} disabled={isUploading}>
             <svg xmlns="http://www.w3.org/2000/svg" 
@@ -280,6 +262,16 @@ const handleChangePassword = async () => {
           </div>
         </div>
       )}
+      {/* ZIP API Response Popup */}
+      {zipResponse && (
+        <div className="zip-response-popup">
+          <div className="zip-response-content">
+            <h4>ZIP Import Result</h4>
+            <pre style={{ fontSize: 13, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{JSON.stringify(zipResponse, null, 2)}</pre>
+            <button className="zip-response-ok" onClick={() => setZipResponse(null)}>OK</button>
+          </div>
+        </div>
+      )}
 
       {/* Logout Confirmation Modal */}
       {showLogoutModal && (
@@ -302,7 +294,43 @@ const handleChangePassword = async () => {
         </div>
       )}
 
-      <style jsx>{`
+  <style jsx>{`
+        .zip-response-ok {
+          margin-top: 14px;
+          background: #00b894;
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          padding: 8px 22px;
+          font-size: 15px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+        .zip-response-ok:hover {
+          background: #019c7d;
+        }
+        .zip-response-popup {
+          position: fixed;
+          top: 80px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: #222;
+          color: #cfe2ea;
+          border-radius: 12px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+          z-index: 2000;
+          padding: 18px 24px;
+          min-width: 260px;
+          max-width: 90vw;
+          animation: fadeIn 0.3s ease;
+        }
+        .zip-response-content h4 {
+          margin: 0 0 8px 0;
+          font-size: 1.1rem;
+          font-weight: 600;
+          color: #ffd600;
+        }
         .topbar {
           display: flex;
           align-items: center;
@@ -318,6 +346,31 @@ const handleChangePassword = async () => {
           margin-left: auto;
           margin-right: 16px;
         }
+          .user-label {
+            color: #8696a0;
+            font-size: 12px;
+            margin-right: 8px;
+          }
+          .user-input {
+            background: #0f1b21;
+            border: 1px solid #0e171c;
+            color: #cfe2ea;
+            border-radius: 8px;
+            padding: 6px 8px;
+            font-size: 12px;
+            width: 200px;
+            margin-right: 16px;
+            transition: border-color 0.2s ease;
+          }
+          .user-input:focus {
+            outline: none;
+            border-color: #00b894;
+          }
+          .change-pwd-btn {
+            background: #ffd600;
+            color: #222;
+            font-weight: 500;
+          }
         
         .title {
           font-size: 1.2rem;
@@ -399,6 +452,46 @@ const handleChangePassword = async () => {
           opacity: 0.6;
           cursor: not-allowed;
         }
+
+          /* Responsive styles for mobile */
+          @media (max-width: 700px) {
+            .topbar {
+              flex-wrap: wrap;
+              gap: 8px;
+              padding: 10px 6px;
+            }
+            .title {
+              font-size: 1rem;
+              flex: 1 1 100%;
+              text-align: left;
+              margin-bottom: 6px;
+            }
+            .user-name-section {
+              flex: 1 1 100%;
+              margin: 0 0 8px 0;
+              justify-content: flex-start;
+            }
+            .user-label {
+              font-size: 11px;
+              margin-right: 4px;
+            }
+            .user-input {
+              width: 120px;
+              font-size: 11px;
+              margin-right: 8px;
+              padding: 5px 6px;
+            }
+            .actions {
+              flex: 1 1 100%;
+              gap: 8px;
+              justify-content: flex-start;
+            }
+            .actions button, .logout-btn, .change-pwd-btn {
+              padding: 7px 10px;
+              font-size: 12px;
+              min-width: 0;
+            }
+          }
 
         /* Progress Bar Styles */
         .progress-container {
@@ -664,6 +757,6 @@ const handleChangePassword = async () => {
           to { transform: translateX(0); opacity: 1; }
         }
       `}</style>
-    </>
+  </div>
   )
 } 

@@ -250,10 +250,10 @@ export default function ChatWindow() {
         }
         
         .prev-btn {
-          grid-column: 3;
-        }
-        
-        .next-btn {
+            .messages {
+              padding: 24px 4px 4px 4px;
+              font-size: 13px;
+            }
           grid-column: 4;
         }
         
