@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState } from 'react'
+import { useMemo, useEffect, useState, useRef } from 'react'
 import { useChat } from '../state/ChatContext'
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist'
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -50,6 +50,7 @@ export default function ChatWindow() {
   const activeChat = chats.find((c) => c.id === activeChatId)
   const [messageSearchQuery, setMessageSearchQuery] = useState('')
   const [currentMessageIndex, setCurrentMessageIndex] = useState(-1)
+  const messagesContainerRef = useRef(null)
 
   // Filter messages based on search query
   const filteredMessages = useMemo(() => {
@@ -84,6 +85,49 @@ export default function ChatWindow() {
     }
   }
 
+  useEffect(() => {
+    // Wait for DOM paint before scrolling for big chats
+    const scrollToBottom = () => {
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
+    };
+    setTimeout(scrollToBottom, 0);
+
+    // Scroll again after images/media load
+    const messagesDiv = messagesContainerRef.current;
+    if (messagesDiv) {
+      const mediaElements = messagesDiv.querySelectorAll('img, video, audio');
+      let loadedCount = 0;
+      const handleMediaLoad = () => {
+        loadedCount++;
+        if (loadedCount === mediaElements.length) {
+          scrollToBottom();
+        }
+      };
+      mediaElements.forEach((el) => {
+        if (el.complete || el.readyState === 4) {
+          loadedCount++;
+        } else {
+          el.addEventListener('load', handleMediaLoad);
+          el.addEventListener('loadeddata', handleMediaLoad);
+        }
+      });
+      // If all media already loaded, scroll immediately
+      if (loadedCount === mediaElements.length) {
+        scrollToBottom();
+      }
+      // Cleanup listeners
+      return () => {
+        mediaElements.forEach((el) => {
+          el.removeEventListener('load', handleMediaLoad);
+          el.removeEventListener('loadeddata', handleMediaLoad);
+        });
+      };
+    }
+    return () => {};
+  }, [activeChatId, filteredMessages]);
+
   return (
     <main className="chat-window" role="main">
       {!activeChat && (
@@ -115,7 +159,6 @@ export default function ChatWindow() {
                   }}
                 />
               </div>
-              
               {messageSearchQuery && (
                 <>
                   <div className="search-results-info">
@@ -156,7 +199,7 @@ export default function ChatWindow() {
             </div>
           </div>
 
-          <div className="messages" tabIndex={0} style={{ outline: 'none' }} onMouseDown={(e) => e.stopPropagation()}>
+          <div className="messages" ref={messagesContainerRef} tabIndex={0} style={{ outline: 'none' }} onMouseDown={(e) => e.stopPropagation()}>
             {filteredMessages.length === 0 && messageSearchQuery ? (
               <div className="empty-state">No messages found for "{messageSearchQuery}"</div>
             ) : filteredMessages.length === 0 && !messageSearchQuery ? (
