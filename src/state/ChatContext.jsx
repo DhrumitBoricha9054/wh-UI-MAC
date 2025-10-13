@@ -161,6 +161,8 @@ export function ChatProvider({ children }) {
           while ((m = filenameRegex.exec(attachedBlock[1])) !== null) {
             candidates.push(m[1])
           }
+          // Remove the <attached: ...> text from the message content
+          msg.content = msg.content.replace(/<\s*attached:\s*[^>]+\s*>/gi, '').trim()
         }
         // Then add any other filenames in the entire message
         let match

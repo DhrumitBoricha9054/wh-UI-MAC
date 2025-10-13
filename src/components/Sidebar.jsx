@@ -177,7 +177,21 @@ export default function Sidebar() {
                 closeSidebar()
               }}
             >
-              <div style={{ fontWeight: 600 }}>{chat.name}</div>
+              <div style={{ fontWeight: 600 }}>
+                {(() => {
+                  // Show other party name(s) if possible
+                  if (chat.participants && globalUserName) {
+                    const others = chat.participants.filter(
+                      p => p && p.toLowerCase() !== globalUserName.toLowerCase()
+                    );
+                    if (others.length > 0) {
+                      return others.join(', ');
+                    }
+                  }
+                  // fallback to chat.name
+                  return chat.name;
+                })()}
+              </div>
               <div style={{ fontSize: 12, color: '#8696a0' }}>
                 {getDisplayParticipants(chat.participants).join(', ') || 'No other participants'}
               </div>
