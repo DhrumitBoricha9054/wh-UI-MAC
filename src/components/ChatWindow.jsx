@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState, useRef } from 'react'
+import { useMemo, useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { useChat } from '../state/ChatContext'
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist'
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -270,48 +270,109 @@ export default function ChatWindow() {
     };
   }, [activeChatId, filteredMessages]);
 
+  // Track if user has manually scrolled (don't auto-scroll if they have)
+  const userHasScrolledRef = useRef(false);
+  const lastScrollHeightRef = useRef(0);
+
+  // Immediate scroll on chat change using useLayoutEffect (runs synchronously)
+  useLayoutEffect(() => {
+    if (!activeChatId || !messagesContainerRef.current) return;
+
+    const messagesDiv = messagesContainerRef.current;
+    const currentHeight = messagesDiv.scrollHeight;
+    
+    // Only auto-scroll if this is a new chat or content grew significantly
+    // Reset user scroll flag when chat changes
+    if (activeChatId) {
+      userHasScrolledRef.current = false;
+    }
+
+    // Scroll immediately if content height increased or it's a new chat
+    if (currentHeight > lastScrollHeightRef.current || !lastScrollHeightRef.current) {
+      messagesDiv.scrollTop = currentHeight;
+      lastScrollHeightRef.current = currentHeight;
+    }
+  }, [activeChatId, filteredMessages.length]);
+
+  // Track user scroll to prevent auto-scroll when user scrolls up
   useEffect(() => {
-    // Wait for DOM paint before scrolling for big chats
+    const messagesDiv = messagesContainerRef.current;
+    if (!messagesDiv) return;
+
+    const handleScroll = () => {
+      const isAtBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 50;
+      userHasScrolledRef.current = !isAtBottom;
+    };
+
+    messagesDiv.addEventListener('scroll', handleScroll, { passive: true });
+    return () => messagesDiv.removeEventListener('scroll', handleScroll);
+  }, [activeChatId]);
+
+  // Use ResizeObserver to scroll as content grows (for long chats loading progressively)
+  useEffect(() => {
+    if (!activeChatId || !messagesContainerRef.current) return;
+
+    const messagesDiv = messagesContainerRef.current;
+    let resizeObserver = null;
+
+    // Only auto-scroll if user hasn't manually scrolled up
+    const shouldAutoScroll = () => {
+      return !userHasScrolledRef.current;
+    };
+
+    // Scroll to bottom helper
     const scrollToBottom = () => {
-      if (messagesContainerRef.current) {
-        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      if (messagesDiv && shouldAutoScroll()) {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        lastScrollHeightRef.current = messagesDiv.scrollHeight;
       }
     };
-    setTimeout(scrollToBottom, 0);
 
-    // Scroll again after images/media load
-    const messagesDiv = messagesContainerRef.current;
-    if (messagesDiv) {
-      const mediaElements = messagesDiv.querySelectorAll('img, video, audio');
-      let loadedCount = 0;
-      const handleMediaLoad = () => {
-        loadedCount++;
-        if (loadedCount === mediaElements.length) {
-          scrollToBottom();
-        }
-      };
-      mediaElements.forEach((el) => {
-        if (el.complete || el.readyState === 4) {
-          loadedCount++;
-        } else {
-          el.addEventListener('load', handleMediaLoad);
-          el.addEventListener('loadeddata', handleMediaLoad);
+    // Use ResizeObserver to detect when content height changes
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const newHeight = entry.target.scrollHeight;
+          if (newHeight > lastScrollHeightRef.current && shouldAutoScroll()) {
+            // Content grew, scroll to bottom
+            requestAnimationFrame(() => {
+              scrollToBottom();
+            });
+          }
+          lastScrollHeightRef.current = newHeight;
         }
       });
-      // If all media already loaded, scroll immediately
-      if (loadedCount === mediaElements.length) {
-        scrollToBottom();
-      }
-      // Cleanup listeners
-      return () => {
-        mediaElements.forEach((el) => {
-          el.removeEventListener('load', handleMediaLoad);
-          el.removeEventListener('loadeddata', handleMediaLoad);
-        });
-      };
+
+      resizeObserver.observe(messagesDiv);
     }
-    return () => {};
-  }, [activeChatId, filteredMessages]);
+
+    // Fallback: Also handle media loading (non-blocking)
+    const mediaElements = messagesDiv.querySelectorAll('img[src], video[src], audio[src]');
+    const handleMediaLoad = () => {
+      if (shouldAutoScroll()) {
+        requestAnimationFrame(() => {
+          scrollToBottom();
+        });
+      }
+    };
+
+    mediaElements.forEach((el) => {
+      if (!el.complete && el.readyState !== 4) {
+        el.addEventListener('load', handleMediaLoad, { once: true });
+        el.addEventListener('loadeddata', handleMediaLoad, { once: true });
+      }
+    });
+
+    return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+      mediaElements.forEach((el) => {
+        el.removeEventListener('load', handleMediaLoad);
+        el.removeEventListener('loadeddata', handleMediaLoad);
+      });
+    };
+  }, [activeChatId, filteredMessages.length]);
 
   return (
     <main className="chat-window" role="main">
