@@ -98,7 +98,9 @@ export default function ChatWindow() {
   const activeChat = chats.find((c) => c.id === activeChatId)
   const [messageSearchQuery, setMessageSearchQuery] = useState('')
   const [currentMessageIndex, setCurrentMessageIndex] = useState(-1)
+  const [stuckDateKey, setStuckDateKey] = useState(null)
   const messagesContainerRef = useRef(null)
+  const dateElementsRef = useRef(new Map())
 
   // Helper to format date as WhatsApp style (e.g., Fri, 3 Oct)
   const formatDate = (ts) => {
@@ -177,6 +179,96 @@ export default function ChatWindow() {
       }, 2000)
     }
   }
+
+  // Track which date should be stuck at top
+  useEffect(() => {
+    const messagesDiv = messagesContainerRef.current;
+    if (!messagesDiv || filteredMessages.length === 0) {
+      setStuckDateKey(null);
+      // Clear all stuck-original classes
+      dateElementsRef.current.forEach((el) => {
+        if (el) el.classList.remove('stuck-original');
+      });
+      return;
+    }
+
+    const updateStuckDate = () => {
+      const container = messagesContainerRef.current;
+      if (!container) return;
+
+      const scrollTop = container.scrollTop;
+      const containerRect = container.getBoundingClientRect();
+
+      // Get all date elements and their positions, sorted by position
+      const dateEntries = Array.from(dateElementsRef.current.entries())
+        .map(([dateKey, element]) => {
+          if (!element) return null;
+          const elementRect = element.getBoundingClientRect();
+          const elementTop = element.offsetTop; // Original position in the document
+          return { dateKey, element, elementTop, elementRect };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.elementTop - b.elementTop);
+      
+      // Find the last date that has scrolled past the top (should be stuck)
+      let stuckKey = null;
+      for (const { dateKey, elementTop } of dateEntries) {
+        // If the original position has scrolled past the top, this date should be stuck
+        if (elementTop <= scrollTop + 50) {
+          stuckKey = dateKey;
+        } else {
+          break;
+        }
+      }
+
+      setStuckDateKey(stuckKey);
+
+      // Update visibility: hide original content when stuck and original position is scrolled past
+      dateEntries.forEach(({ dateKey, element, elementTop, elementRect }) => {
+        if (dateKey === stuckKey) {
+          // Check if the original position is above the viewport
+          // When elementTop < scrollTop, the original position has scrolled past
+          // When elementRect.top is near containerRect.top, it's stuck at the top
+          const isOriginalScrolledPast = elementTop < scrollTop - 10;
+          const isStuckAtTop = Math.abs(elementRect.top - containerRect.top) < 30;
+          
+          if (isOriginalScrolledPast && isStuckAtTop) {
+            element.classList.add('stuck-original');
+          } else {
+            element.classList.remove('stuck-original');
+          }
+        } else {
+          element.classList.remove('stuck-original');
+        }
+      });
+    };
+
+    // Initial update after a short delay to ensure DOM is ready
+    const initialTimeout = setTimeout(updateStuckDate, 150);
+
+    // Update on scroll with throttling
+    let scrollTimeout;
+    const handleScroll = () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(updateStuckDate, 16); // ~60fps
+    };
+
+    messagesDiv.addEventListener('scroll', handleScroll, { passive: true });
+    
+    // Also update when messages change
+    const changeTimeout = setTimeout(updateStuckDate, 300);
+
+    return () => {
+      clearTimeout(initialTimeout);
+      clearTimeout(changeTimeout);
+      clearTimeout(scrollTimeout);
+      messagesDiv.removeEventListener('scroll', handleScroll);
+      // Cleanup classes
+      dateElementsRef.current.forEach((el) => {
+        if (el) el.classList.remove('stuck-original');
+      });
+    };
+  }, [activeChatId, filteredMessages]);
 
   useEffect(() => {
     // Wait for DOM paint before scrolling for big chats
@@ -302,30 +394,18 @@ export default function ChatWindow() {
                 item.type === 'date' ? (
                   <div
                     key={item.key}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'center',
-                      margin: '32px 0 16px 0',
+                    ref={(el) => {
+                      if (el) {
+                        dateElementsRef.current.set(item.key, el);
+                      } else {
+                        dateElementsRef.current.delete(item.key);
+                      }
                     }}
+                    data-date-key={item.key}
+                    data-date={item.date}
+                    className={`date-separator ${stuckDateKey === item.key ? 'stuck-original' : ''}`}
                   >
-                    <span
-                      style={{
-                        color: '#cfd8dc',
-                        fontWeight: 600,
-                        fontSize: 16,
-                        letterSpacing: 0.5,
-                        background: 'rgba(0,0,0,0.3)',
-                        borderRadius: 8,
-                        padding: '6px 24px',
-                        boxShadow: '0 1px 4px #0002',
-                        display: 'inline-block',
-                        minWidth: 120,
-                        maxWidth: 240,
-                        textAlign: 'center',
-                      }}
-                    >
-                      {item.date}
-                    </span>
+                    <span className="date-text">{item.date}</span>
                   </div>
                 ) : (
                   <MessageBubble key={item.key} message={item.message} meName={globalUserName} />
@@ -513,6 +593,64 @@ export default function ChatWindow() {
           height: 200px;
           color: #8696a0;
           font-size: 14px;
+        }
+        
+        .date-separator {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          display: flex;
+          justify-content: center;
+          padding: 8px 0;
+          margin: 32px 0 16px 0;
+          background: linear-gradient(to bottom, rgba(11, 20, 26, 0.98) 0%, rgba(11, 20, 26, 0.9) 70%, transparent 100%);
+          backdrop-filter: blur(8px);
+          margin-top: -16px;
+        }
+        
+        .date-text {
+          color: #cfd8dc;
+          font-weight: 600;
+          font-size: 16px;
+          letter-spacing: 0.5px;
+          background: rgba(0, 0, 0, 0.3);
+          border-radius: 8px;
+          padding: 6px 24px;
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+          display: inline-block;
+          min-width: 120px;
+          max-width: 240px;
+          text-align: center;
+        }
+        
+        /* Hide the original date text when stuck and scrolled past its original position */
+        .date-separator.stuck-original .date-text {
+          opacity: 0;
+          pointer-events: none;
+        }
+        
+        /* Show date text in sticky position using pseudo-element when original is hidden */
+        .date-separator.stuck-original::after {
+          content: attr(data-date);
+          position: absolute;
+          top: 8px;
+          left: 50%;
+          transform: translateX(-50%);
+          color: #cfd8dc;
+          font-weight: 600;
+          font-size: 16px;
+          letter-spacing: 0.5px;
+          background: rgba(0, 0, 0, 0.3);
+          border-radius: 8px;
+          padding: 6px 24px;
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+          display: inline-block;
+          min-width: 120px;
+          max-width: 240px;
+          text-align: center;
+          white-space: nowrap;
+          z-index: 11;
+          pointer-events: none;
         }
       `}</style>
     </main>
