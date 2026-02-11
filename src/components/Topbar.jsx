@@ -263,23 +263,23 @@ export default function Topbar() {
         </div>
       </div>
 
-      {/* === MOBILE: User Name Bar (visible on chat list) === */}
-      <div className="mobile-name-bar">
-        <label htmlFor="globalUserNameMobile" className="user-label">Your name:</label>
-        <input
-          id="globalUserNameMobile"
-          placeholder="Type name as it appears in chat"
-          value={globalUserName || ''}
-          onChange={(e) => setGlobalName(e.target.value)}
-          className="user-input"
-        />
-      </div>
-
       {/* === MOBILE: Dropdown Menu === */}
       {showMobileMenu && (
         <>
           <div className="mobile-menu-overlay" onClick={() => setShowMobileMenu(false)}></div>
           <div className="mobile-dropdown-menu">
+            {/* Your name input inside menu */}
+            <div className="menu-name-input">
+              <label htmlFor="globalUserNameMobile" className="menu-name-label">Your name</label>
+              <input
+                id="globalUserNameMobile"
+                placeholder="Type name as it appears in chat"
+                value={globalUserName || ''}
+                onChange={(e) => setGlobalName(e.target.value)}
+                className="menu-name-field"
+              />
+            </div>
+            <div className="menu-divider"></div>
             <input
               ref={inputRef}
               type="file"
@@ -793,7 +793,41 @@ export default function Topbar() {
           }
           .mobile-dropdown-menu .menu-logout {
             color: #ff4d4d;
-            border-top: 1px solid #0e171c;
+            border-top: 1px solid rgba(134, 150, 160, 0.1);
+          }
+          .menu-name-input {
+            padding: 10px 16px 6px;
+          }
+          .menu-name-label {
+            display: block;
+            font-size: 11px;
+            color: #8696a0;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
+          .menu-name-field {
+            width: 100%;
+            padding: 8px 12px;
+            background: #111b21;
+            border: 1px solid rgba(134, 150, 160, 0.2);
+            border-radius: 6px;
+            color: #e9edef;
+            font-size: 14px;
+            outline: none;
+            box-sizing: border-box;
+            transition: border-color 0.2s ease;
+          }
+          .menu-name-field:focus {
+            border-color: #00a884;
+          }
+          .menu-name-field::placeholder {
+            color: #667781;
+          }
+          .menu-divider {
+            height: 1px;
+            background: rgba(134, 150, 160, 0.1);
+            margin: 6px 0;
           }
 
           @keyframes menuSlideDown {

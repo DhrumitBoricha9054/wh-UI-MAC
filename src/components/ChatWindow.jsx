@@ -99,6 +99,7 @@ export default function ChatWindow() {
   const [messageSearchQuery, setMessageSearchQuery] = useState('')
   const [currentMessageIndex, setCurrentMessageIndex] = useState(-1)
   const [stuckDateKey, setStuckDateKey] = useState(null)
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
   const messagesContainerRef = useRef(null)
   const dateElementsRef = useRef(new Map())
 
@@ -151,10 +152,10 @@ export default function ChatWindow() {
   const filteredMessages = useMemo(() => {
     const activeMessages = messagesByChatId[activeChatId] || []
     if (!activeChat || !messageSearchQuery.trim()) return activeMessages
-    
+
     const query = messageSearchQuery.toLowerCase()
-    return activeMessages.filter(msg => 
-      msg.content.toLowerCase().includes(query) || 
+    return activeMessages.filter(msg =>
+      msg.content.toLowerCase().includes(query) ||
       msg.author.toLowerCase().includes(query)
     )
   }, [activeChat, messageSearchQuery, messagesByChatId, activeChatId])
@@ -162,13 +163,13 @@ export default function ChatWindow() {
   // Find next/previous search result
   const findNextResult = (direction = 1) => {
     if (filteredMessages.length === 0) return
-    
+
     let newIndex = currentMessageIndex + direction
     if (newIndex >= filteredMessages.length) newIndex = 0
     if (newIndex < 0) newIndex = filteredMessages.length - 1
-    
+
     setCurrentMessageIndex(newIndex)
-    
+
     // Scroll to the message
     const messageElement = document.querySelector(`[data-message-id="${filteredMessages[newIndex].id}"]`)
     if (messageElement) {
@@ -209,7 +210,7 @@ export default function ChatWindow() {
         })
         .filter(Boolean)
         .sort((a, b) => a.elementTop - b.elementTop);
-      
+
       // Find the last date that has scrolled past the top (should be stuck)
       let stuckKey = null;
       for (const { dateKey, elementTop } of dateEntries) {
@@ -231,7 +232,7 @@ export default function ChatWindow() {
           // When elementRect.top is near containerRect.top, it's stuck at the top
           const isOriginalScrolledPast = elementTop < scrollTop - 10;
           const isStuckAtTop = Math.abs(elementRect.top - containerRect.top) < 30;
-          
+
           if (isOriginalScrolledPast && isStuckAtTop) {
             element.classList.add('stuck-original');
           } else {
@@ -254,7 +255,7 @@ export default function ChatWindow() {
     };
 
     messagesDiv.addEventListener('scroll', handleScroll, { passive: true });
-    
+
     // Also update when messages change
     const changeTimeout = setTimeout(updateStuckDate, 300);
 
@@ -280,7 +281,7 @@ export default function ChatWindow() {
 
     const messagesDiv = messagesContainerRef.current;
     const currentHeight = messagesDiv.scrollHeight;
-    
+
     // Only auto-scroll if this is a new chat or content grew significantly
     // Reset user scroll flag when chat changes
     if (activeChatId) {
@@ -377,19 +378,39 @@ export default function ChatWindow() {
   return (
     <main className="chat-window" role="main">
       {!activeChat && (
-        <div className="empty-state">Select a chat to view messages</div>
+        <div className="empty-state-full">
+          <div className="empty-state-icon">
+            <svg width="72" height="72" viewBox="0 0 24 24" fill="none">
+              <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" stroke="#00a884" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" opacity="0.5" />
+            </svg>
+          </div>
+          <div className="empty-state-title">WhatsApp Chat Viewer</div>
+          <div className="empty-state-subtitle">Select a chat from the sidebar to view messages.<br />Import a ZIP export to get started.</div>
+        </div>
       )}
       {activeChat && isLoadingMessages && (
-        <div className="loading-state">Loading messages...</div>
+        <div className="loading-chat-state">
+          <div className="chat-loading-spinner"></div>
+          <span>Loading messages...</span>
+        </div>
       )}
       {activeChat && !isLoadingMessages && (
         <>
-          {/* Message Search Bar */}
-          <div className="message-search-container">
+          {/* Message Search Bar - collapsible on mobile */}
+          <div className={`message-search-container ${isSearchOpen ? 'search-open' : ''}`}>
             <div className="search-grid">
+              <button
+                className="search-toggle-btn"
+                onClick={() => setIsSearchOpen(!isSearchOpen)}
+                aria-label="Toggle search"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </button>
               <div className="search-input-wrapper">
                 <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
                 <input
                   type="text"
@@ -401,6 +422,11 @@ export default function ChatWindow() {
                     if (e.key === 'Enter') {
                       if (e.shiftKey) findNextResult(-1)
                       else findNextResult(1)
+                    }
+                    if (e.key === 'Escape') {
+                      setMessageSearchQuery('')
+                      setCurrentMessageIndex(-1)
+                      setIsSearchOpen(false)
                     }
                   }}
                 />
@@ -414,7 +440,7 @@ export default function ChatWindow() {
                       <span>No results</span>
                     )}
                   </div>
-                  <button 
+                  <button
                     onClick={() => findNextResult(-1)}
                     className="search-nav-btn prev-btn"
                     disabled={filteredMessages.length === 0}
@@ -422,7 +448,7 @@ export default function ChatWindow() {
                   >
                     ‹
                   </button>
-                  <button 
+                  <button
                     onClick={() => findNextResult(1)}
                     className="search-nav-btn next-btn"
                     disabled={filteredMessages.length === 0}
@@ -430,7 +456,7 @@ export default function ChatWindow() {
                   >
                     ›
                   </button>
-                  <button 
+                  <button
                     onClick={() => {
                       setMessageSearchQuery('')
                       setCurrentMessageIndex(-1)
@@ -445,11 +471,11 @@ export default function ChatWindow() {
             </div>
           </div>
 
-          <div className="messages" ref={messagesContainerRef} tabIndex={0} style={{ outline: 'none' }} onMouseDown={(e) => e.stopPropagation()}>
+          <div className="messages chat-wallpaper" ref={messagesContainerRef} tabIndex={0} style={{ outline: 'none' }} onMouseDown={(e) => e.stopPropagation()}>
             {filteredMessages.length === 0 && messageSearchQuery ? (
-              <div className="empty-state">No messages found for "{messageSearchQuery}"</div>
+              <div className="empty-messages">No messages found for "{messageSearchQuery}"</div>
             ) : filteredMessages.length === 0 && !messageSearchQuery ? (
-              <div className="empty-state">No messages available for this chat</div>
+              <div className="empty-messages">No messages available for this chat</div>
             ) : (
               groupMessagesByDate(filteredMessages).map((item) =>
                 item.type === 'date' ? (
@@ -477,23 +503,102 @@ export default function ChatWindow() {
         </>
       )}
       <style jsx>{`
+        /* Empty state - full screen */
+        .empty-state-full {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100%;
+          color: #8696a0;
+          text-align: center;
+          padding: 32px;
+          background: radial-gradient(ellipse at center, rgba(0, 168, 132, 0.03) 0%, transparent 70%);
+        }
+        .empty-state-icon {
+          margin-bottom: 16px;
+          animation: float 3s ease-in-out infinite;
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-8px); }
+        }
+        .empty-state-title {
+          font-size: 22px;
+          font-weight: 600;
+          color: #e9edef;
+          margin-bottom: 8px;
+        }
+        .empty-state-subtitle {
+          font-size: 14px;
+          line-height: 1.6;
+          color: #8696a0;
+          max-width: 340px;
+        }
+
+        /* Loading state */
+        .loading-chat-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 200px;
+          gap: 16px;
+          color: #8696a0;
+          font-size: 14px;
+        }
+        .chat-loading-spinner {
+          width: 32px;
+          height: 32px;
+          border: 3px solid #1f2c33;
+          border-top: 3px solid #00a884;
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
+        .empty-messages {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 200px;
+          color: #8696a0;
+          font-size: 14px;
+        }
+
+        /* WhatsApp wallpaper pattern */
+        .chat-wallpaper {
+          background-color: #0b141a;
+          background-image:
+            radial-gradient(circle at 20% 50%, rgba(0, 168, 132, 0.03) 0%, transparent 50%),
+            radial-gradient(circle at 80% 20%, rgba(0, 168, 132, 0.02) 0%, transparent 40%),
+            url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.015'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        }
+
+        /* Search Container */
         .message-search-container {
-          padding: 12px 16px;
-          border-bottom: 1px solid #0e171c;
-          background: #0f1b21;
+          padding: 8px 12px;
+          border-bottom: 1px solid rgba(14, 23, 28, 0.8);
+          background: var(--panel-2, #1f2c33);
+        }
+
+        .search-toggle-btn {
+          display: none;
         }
         
         .search-grid {
-          display: grid;
-          grid-template-columns: 1fr auto auto auto auto;
-          gap: 12px;
+          display: flex;
+          gap: 8px;
           align-items: center;
         }
         
         .search-input-wrapper {
           position: relative;
-          grid-column: 1;
-          min-width: 250px;
+          flex: 1;
+          min-width: 0;
         }
         
         .search-icon {
@@ -508,10 +613,10 @@ export default function ChatWindow() {
         
         .message-search-input {
           width: 100%;
-          padding: 10px 12px 10px 36px;
-          background: #1f2c33;
-          border: 1px solid #0e171c;
-          border-radius: 6px;
+          padding: 8px 12px 8px 36px;
+          background: #111b21;
+          border: 1px solid rgba(134, 150, 160, 0.15);
+          border-radius: 8px;
           color: #cfe2ea;
           font-size: 13px;
           outline: none;
@@ -520,7 +625,7 @@ export default function ChatWindow() {
         }
         
         .message-search-input:focus {
-          border-color: #00b894;
+          border-color: #00a884;
         }
         
         .message-search-input::placeholder {
@@ -528,134 +633,100 @@ export default function ChatWindow() {
         }
         
         .search-results-info {
-          grid-column: 2;
           font-size: 12px;
           color: #8696a0;
           white-space: nowrap;
-          min-width: 70px;
-          text-align: center;
           padding: 4px 8px;
-          background: #1f2c33;
-          border-radius: 4px;
-          border: 1px solid #0e171c;
+          background: #111b21;
+          border-radius: 6px;
+          border: 1px solid rgba(134, 150, 160, 0.15);
         }
         
         .search-nav-btn {
-          background: #1f2c33;
-          border: 1px solid #0e171c;
+          background: #111b21;
+          border: 1px solid rgba(134, 150, 160, 0.15);
           color: #cfe2ea;
           cursor: pointer;
           padding: 0;
-          border-radius: 4px;
+          border-radius: 6px;
           font-size: 16px;
-          transition: all 0.2s ease;
-          width: 36px;
-          height: 36px;
+          transition: all 0.15s ease;
+          width: 32px;
+          height: 32px;
           display: flex;
           align-items: center;
           justify-content: center;
-        }
-        
-        .prev-btn {
-            .messages {
-              padding: 24px 4px 4px 4px;
-              font-size: 13px;
-            }
-          grid-column: 4;
+          flex-shrink: 0;
         }
         
         .search-nav-btn:hover:not(:disabled) {
           background: #2a3942;
-          border-color: #00b894;
+          border-color: #00a884;
         }
         
         .search-nav-btn:disabled {
-          opacity: 0.5;
+          opacity: 0.4;
           cursor: not-allowed;
         }
         
         .clear-search {
-          grid-column: 5;
-          background: #1f2c33;
-          border: 1px solid #0e171c;
+          background: #111b21;
+          border: 1px solid rgba(134, 150, 160, 0.15);
           color: #8696a0;
           cursor: pointer;
           padding: 0;
-          border-radius: 4px;
-          font-size: 14px;
-          transition: all 0.2s ease;
-          width: 36px;
-          height: 36px;
+          border-radius: 6px;
+          font-size: 13px;
+          transition: all 0.15s ease;
+          width: 32px;
+          height: 32px;
           display: flex;
           align-items: center;
           justify-content: center;
+          flex-shrink: 0;
         }
         
         .clear-search:hover {
           color: #cfe2ea;
           background: #2a3942;
-          border-color: #00b894;
+          border-color: #00a884;
         }
         
-        /* Responsive adjustments */
+        /* Mobile search: collapsible */
         @media (max-width: 768px) {
-          .search-grid {
-            grid-template-columns: 1fr;
-            gap: 8px;
+          .message-search-container {
+            padding: 6px 12px;
           }
-          
-          .search-input-wrapper {
-            grid-column: 1;
-            min-width: auto;
+          .search-toggle-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            color: #8696a0;
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 50%;
+            transition: background 0.15s ease;
           }
-          
-          .search-results-info {
-            grid-column: 1;
-            justify-self: center;
+          .search-toggle-btn:hover {
+            background: rgba(134, 150, 160, 0.15);
           }
-          
-          .prev-btn {
-            grid-column: 1;
-            justify-self: start;
+          .message-search-container:not(.search-open) .search-input-wrapper,
+          .message-search-container:not(.search-open) .search-results-info,
+          .message-search-container:not(.search-open) .search-nav-btn,
+          .message-search-container:not(.search-open) .clear-search {
+            display: none;
           }
-          
-          .next-btn {
-            grid-column: 1;
-            justify-self: center;
+          .message-search-container.search-open .search-toggle-btn {
+            display: none;
           }
-          
-          .clear-search {
-            grid-column: 1;
-            justify-self: end;
-          }
-          
-          .search-nav-btn,
-          .clear-search {
-            width: 32px;
-            height: 32px;
-            font-size: 14px;
+          .message-search-container.search-open {
+            padding: 8px 12px;
           }
         }
         
-        .loading-state {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          height: 200px;
-          color: #8696a0;
-          font-size: 14px;
-          font-style: italic;
-        }
-        
-        .empty-state {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          height: 200px;
-          color: #8696a0;
-          font-size: 14px;
-        }
-        
+        /* Date separator */
         .date-separator {
           position: sticky;
           top: 0;
@@ -663,52 +734,45 @@ export default function ChatWindow() {
           display: flex;
           justify-content: center;
           padding: 8px 0;
-          margin: 32px 0 16px 0;
-          background: linear-gradient(to bottom, rgba(11, 20, 26, 0.98) 0%, rgba(11, 20, 26, 0.9) 70%, transparent 100%);
-          backdrop-filter: blur(8px);
-          margin-top: -16px;
+          margin: 16px 0 8px 0;
+          background: linear-gradient(to bottom, rgba(11, 20, 26, 0.95) 0%, rgba(11, 20, 26, 0.8) 60%, transparent 100%);
+          backdrop-filter: blur(6px);
         }
         
         .date-text {
-          color: #cfd8dc;
-          font-weight: 600;
-          font-size: 16px;
-          letter-spacing: 0.5px;
-          background: rgba(0, 0, 0, 0.3);
-          border-radius: 8px;
-          padding: 6px 24px;
-          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+          color: rgba(225, 225, 225, 0.85);
+          font-weight: 500;
+          font-size: 12.5px;
+          letter-spacing: 0.3px;
+          text-transform: uppercase;
+          background: rgba(18, 28, 34, 0.85);
+          border-radius: 7px;
+          padding: 5px 16px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
           display: inline-block;
-          min-width: 120px;
-          max-width: 240px;
-          text-align: center;
         }
         
-        /* Hide the original date text when stuck and scrolled past its original position */
         .date-separator.stuck-original .date-text {
           opacity: 0;
           pointer-events: none;
         }
         
-        /* Show date text in sticky position using pseudo-element when original is hidden */
         .date-separator.stuck-original::after {
           content: attr(data-date);
           position: absolute;
           top: 8px;
           left: 50%;
           transform: translateX(-50%);
-          color: #cfd8dc;
-          font-weight: 600;
-          font-size: 16px;
-          letter-spacing: 0.5px;
-          background: rgba(0, 0, 0, 0.3);
-          border-radius: 8px;
-          padding: 6px 24px;
-          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+          color: rgba(225, 225, 225, 0.85);
+          font-weight: 500;
+          font-size: 12.5px;
+          letter-spacing: 0.3px;
+          text-transform: uppercase;
+          background: rgba(18, 28, 34, 0.85);
+          border-radius: 7px;
+          padding: 5px 16px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
           display: inline-block;
-          min-width: 120px;
-          max-width: 240px;
-          text-align: center;
           white-space: nowrap;
           z-index: 11;
           pointer-events: none;
