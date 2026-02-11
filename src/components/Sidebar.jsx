@@ -12,22 +12,22 @@ export default function Sidebar() {
   // Filter chats based on search query
   const filteredChats = useMemo(() => {
     if (!searchQuery.trim()) return chats
-    
+
     const query = searchQuery.toLowerCase()
     return chats.filter(chat => {
       // Search in chat name
       if (chat.name.toLowerCase().includes(query)) return true
-      
+
       // Search in participants (excluding current user)
-      const otherParticipants = chat.participants.filter(p => 
+      const otherParticipants = chat.participants.filter(p =>
         !globalUserName || p.toLowerCase() !== globalUserName.toLowerCase()
       )
       if (otherParticipants.some(p => p.toLowerCase().includes(query))) return true
-      
+
       // Search in message content (first 100 messages for performance)
       const messagesToSearch = chat.messages.slice(0, 100)
-      return messagesToSearch.some(msg => 
-        msg.content.toLowerCase().includes(query) || 
+      return messagesToSearch.some(msg =>
+        msg.content.toLowerCase().includes(query) ||
         msg.author.toLowerCase().includes(query)
       )
     })
@@ -42,12 +42,12 @@ export default function Sidebar() {
   return (
     <>
       <div className={`overlay ${isSidebarOpen ? 'open' : ''}`} onClick={closeSidebar} />
-      <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
+      <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`} id="sidebar">
         {/* Search Bar */}
         <div className="search-container">
           <div className="search-input-wrapper">
             <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
             <input
               type="text"
@@ -57,7 +57,7 @@ export default function Sidebar() {
               className="search-input"
             />
             {searchQuery && (
-              <button 
+              <button
                 onClick={() => setSearchQuery('')}
                 className="clear-search"
                 aria-label="Clear search"
@@ -71,15 +71,15 @@ export default function Sidebar() {
         {isLoadingChats && (
           <div className="loading-state">Loading chats...</div>
         )}
-        
+
         {!isLoadingChats && filteredChats.length === 0 && searchQuery && (
           <div className="search-no-results">No chats found for "{searchQuery}"</div>
         )}
-        
+
         {!isLoadingChats && filteredChats.length === 0 && !searchQuery && (
           <div className="empty-state">No chats available</div>
         )}
-        
+
         {/* Bulk Delete Controls */}
         {filteredChats.length > 0 && (
           <div className="bulk-controls">
@@ -93,7 +93,7 @@ export default function Sidebar() {
               >
                 {isSelectionMode ? 'Cancel' : 'Select'}
               </button> */}
-              
+
               {isSelectionMode && selectedChats.size > 0 && (
                 <button
                   className="delete-selected"
@@ -124,7 +124,7 @@ export default function Sidebar() {
               )
               }
             </div>
-            
+
             {/* <button
               className="clear-all"
               onClick={async () => {
@@ -144,7 +144,7 @@ export default function Sidebar() {
             </button> */}
           </div>
         )}
-        
+
         {filteredChats.map((chat) => (
           <div
             key={chat.id}
@@ -168,9 +168,9 @@ export default function Sidebar() {
                 onClick={(e) => e.stopPropagation()}
               />
             )}
-            
+
             {/* Chat Content */}
-            <div 
+            <div
               className="chat-content"
               onClick={() => {
                 setActiveChatId(chat.id)
@@ -199,7 +199,7 @@ export default function Sidebar() {
                 {chat.messageCount || chat.messages?.length || 0} message{(chat.messageCount || chat.messages?.length || 0) !== 1 ? 's' : ''}
               </div>
             </div>
-            
+
             {/* Delete Button */}
             <button
               className="delete-chat-btn"

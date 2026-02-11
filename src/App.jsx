@@ -9,8 +9,10 @@ import './components/Login.css';
 import { useEffect, useState } from 'react';
 
 function MainApp() {
+  const { activeChatId } = useChat();
+
   return (
-    <div className="app">
+    <div className={`app ${activeChatId ? 'chat-active' : 'chat-list-active'}`}>
       <Topbar />
       <div className="layout">
         <Sidebar />

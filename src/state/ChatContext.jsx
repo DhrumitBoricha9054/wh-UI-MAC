@@ -315,6 +315,18 @@ export function ChatProvider({ children }) {
   const toggleSidebar = useCallback(() => setIsSidebarOpen((v) => !v), [])
   const closeSidebar = useCallback(() => setIsSidebarOpen(false), [])
 
+  // Go back to chat list (mobile navigation)
+  const goBack = useCallback(() => {
+    setActiveChatId(null)
+  }, [])
+
+  // Logout
+  const logout = useCallback(() => {
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('auth_user')
+    window.location.reload()
+  }, [])
+
   const setMyName = useCallback((chatId, name) => {
     setMyNameByChatId((prev) => ({ ...prev, [chatId]: name }))
   }, [])
@@ -532,7 +544,9 @@ export function ChatProvider({ children }) {
     isLoadingMessages,
     messagesByChatId,
     loadMoreMessages,
-  }), [chats, activeChatId, setActiveChatIdWithMessages, importFromZip, isSidebarOpen, toggleSidebar, closeSidebar, globalUserName, setGlobalName, myNameByChatId, setMyName, viewer, openMedia, closeMedia, stepMedia, importStats, deleteChat, deleteMultipleChats, clearAllChats, fetchChatsFromAPI, isLoadingChats, fetchMessagesForChat, isLoadingMessages, messagesByChatId, loadMoreMessages])
+    goBack,
+    logout,
+  }), [chats, activeChatId, setActiveChatIdWithMessages, importFromZip, isSidebarOpen, toggleSidebar, closeSidebar, globalUserName, setGlobalName, myNameByChatId, setMyName, viewer, openMedia, closeMedia, stepMedia, importStats, deleteChat, deleteMultipleChats, clearAllChats, fetchChatsFromAPI, isLoadingChats, fetchMessagesForChat, isLoadingMessages, messagesByChatId, loadMoreMessages, goBack, logout])
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
 }
