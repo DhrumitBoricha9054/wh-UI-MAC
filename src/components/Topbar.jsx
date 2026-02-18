@@ -132,8 +132,8 @@ export default function Topbar() {
       const others = activeChat.participants.filter(
         p => p && p.toLowerCase() !== globalUserName.toLowerCase()
       )
-      // Group chat: more than 1 other person (3+ total participants)
-      if (others.length > 1) return 'Group'
+      // Group chat: show actual group name
+      if (others.length > 1) return activeChat.name
       // 1-on-1 chat: show the other person's name
       if (others.length === 1) return others[0]
     }

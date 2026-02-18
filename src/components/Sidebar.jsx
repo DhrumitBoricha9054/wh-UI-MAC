@@ -87,7 +87,7 @@ export default function Sidebar() {
       const others = chat.participants.filter(
         p => p && p.toLowerCase() !== globalUserName.toLowerCase()
       )
-      if (others.length > 1) return 'Group'
+      if (others.length > 1) return chat.name
       if (others.length === 1) return others[0]
     }
     return chat.name
