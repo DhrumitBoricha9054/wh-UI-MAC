@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, useEffect } from 'react'
 import JSZip from 'jszip'
 import { parseWhatsAppText, inferMediaType } from '../lib/whatsappParser'
-import { apiGetChats, apiGetMessages, getApiBase, apiDeleteAllChats, apiDeleteSelectedChats, apiDeleteChat } from '../lib/api'
+import { apiGetChats, apiGetMessages, getApiBase, apiDeleteAllChats, apiDeleteSelectedChats, apiDeleteChat, apiMergeChats } from '../lib/api'
 
 const ChatContext = createContext(null)
 
@@ -61,14 +61,14 @@ export function ChatProvider({ children }) {
       // Fetch all messages by setting a high limit
       const result = await apiGetMessages(chatId, token, { limit: 1000 })
       const { items: messages } = result || {}
-      
+
       // Transform API messages to match our local format
       const transformedMessages = (messages || []).map(msg => {
         let media = null
         if (msg.media_path) {
           const fileName = msg.media_path.split('/').pop()
           const fileExtension = fileName.split('.').pop().toLowerCase()
-          
+
           // Determine media type from file extension
           let mediaType = 'file'
           if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension)) {
@@ -80,7 +80,7 @@ export function ChatProvider({ children }) {
           } else if (fileExtension === 'pdf') {
             mediaType = 'pdf'
           }
-          
+
           const base = getApiBase().replace('/api', '')
           const path = msg.media_path.startsWith('/') ? msg.media_path : `/uploads/${msg.media_path}`
           media = {
@@ -89,7 +89,7 @@ export function ChatProvider({ children }) {
             url: `${base}${path}`
           }
         }
-        
+
         return {
           id: msg.id.toString(),
           author: msg.author,
@@ -99,7 +99,7 @@ export function ChatProvider({ children }) {
           media
         }
       })
-      
+
       setMessagesByChatId(prev => ({
         ...prev,
         [chatId]: transformedMessages
@@ -136,7 +136,7 @@ export function ChatProvider({ children }) {
     let skippedCount = 0
     let updatedCount = 0
     let addedCount = 0
-    
+
     for (const chatFile of chatTextFiles) {
       const textContent = await chatFile.async('string')
       const messages = parseWhatsAppText(textContent)
@@ -151,8 +151,8 @@ export function ChatProvider({ children }) {
 
       for (const msg of messages) {
         // Build list of filename candidates. Prefer those inside the <attached: ...> section first.
-  // Match filename-like tokens (no whitespace or angle brackets) ending with a known extension
-  const filenameRegex = /([^\s<>]+?\.(?:png|jpe?g|gif|webp|mp4|webm|mov|m4v|mp3|wav|ogg|m4a|pdf))/ig
+        // Match filename-like tokens (no whitespace or angle brackets) ending with a known extension
+        const filenameRegex = /([^\s<>]+?\.(?:png|jpe?g|gif|webp|mp4|webm|mov|m4v|mp3|wav|ogg|m4a|pdf))/ig
         const candidates = []
 
         const attachedBlock = msg.content.match(/<\s*attached:\s*([^>]+)\s*>/i)
@@ -197,20 +197,20 @@ export function ChatProvider({ children }) {
       }
 
       const chatName = chatFile.name.replace(/\.txt$/i, '').split('/').pop()
-      
+
       // Extract participants from messages to identify the actual chat
       const chatParticipants = Array.from(new Set(messages.map(m => m.author))).sort()
       const participantKey = chatParticipants.join('|')
-      
+
       // Find existing chat by participants (not just filename)
       const existingChat = chats.find((c) => {
         // Check if participants match (this is the real identifier)
         const existingParticipants = Array.from(new Set(c.participants)).sort()
         const existingKey = existingParticipants.join('|')
-        
+
         return existingKey === participantKey
       })
-      
+
       if (existingChat) {
         // Prefer fast-path: find the index of the last existing message in the new import
         const idOf = (m) => `${m.author}||${m.content}||${m.timestamp}`
@@ -247,7 +247,7 @@ export function ChatProvider({ children }) {
         // New chat, add it
         // Create a meaningful chat name based on participants
         let finalChatName = chatName
-        
+
         // If it's a generic name like "_chat", create a better name
         if (chatName === '_chat' || chatName === 'chat' || chatName === 'Chat') {
           if (chatParticipants.length === 2) {
@@ -261,7 +261,7 @@ export function ChatProvider({ children }) {
             finalChatName = `${displayParticipants}${otherParticipants.length > 3 ? '...' : ''}`
           }
         }
-        
+
         // Ensure the name is unique
         let uniqueName = finalChatName
         let counter = 1
@@ -269,7 +269,7 @@ export function ChatProvider({ children }) {
           uniqueName = `${finalChatName} (${counter})`
           counter++
         }
-        
+
         newChats.push({
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           name: uniqueName,
@@ -283,7 +283,7 @@ export function ChatProvider({ children }) {
     // Update existing chats and add new ones
     setChats((prev) => {
       let updatedChatsList = [...prev]
-      
+
       // Update existing chats
       updatedChats.forEach(updatedChat => {
         const index = updatedChatsList.findIndex(c => c.id === updatedChat.id)
@@ -291,15 +291,15 @@ export function ChatProvider({ children }) {
           updatedChatsList[index] = updatedChat
         }
       })
-      
+
       // Add new chats
       return [...newChats, ...updatedChatsList]
     })
-    
+
     if (!activeChatId && (newChats[0] || updatedChats[0])) {
       setActiveChatId((newChats[0] || updatedChats[0]).id)
     }
-    
+
     // Show import statistics
     setImportStats({
       skipped: skippedCount,
@@ -307,7 +307,7 @@ export function ChatProvider({ children }) {
       added: addedCount,
       timestamp: Date.now()
     })
-    
+
     // Clear stats after 5 seconds
     setTimeout(() => setImportStats(null), 5000)
   }, [chats, activeChatId, globalUserName])
@@ -439,6 +439,30 @@ export function ChatProvider({ children }) {
     return { ok: true, deleted: chatIds.length }
   }, [activeChatId, chats])
 
+  // Merge multiple chats into one
+  const mergeChats = useCallback(async (chatIds) => {
+    if (!chatIds || chatIds.length < 2) return { ok: false }
+
+    const token = localStorage.getItem('auth_token')
+    if (!token) return { ok: false, error: 'Login required' }
+
+    try {
+      const res = await apiMergeChats(chatIds, token)
+      if (res && res.ok) {
+        // Refresh the full chat list from server to get updated state
+        await fetchChatsFromAPI()
+        // Set the merged chat as active
+        if (res.mergedChatId) {
+          setActiveChatId(res.mergedChatId)
+        }
+      }
+      return res
+    } catch (err) {
+      console.error('Failed to merge chats:', err)
+      throw err
+    }
+  }, [fetchChatsFromAPI])
+
   // Clear all chats
   const clearAllChats = useCallback(async () => {
     const token = localStorage.getItem('auth_token')
@@ -472,14 +496,14 @@ export function ChatProvider({ children }) {
     try {
       const result = await apiGetMessages(chatId, token, { page, limit: 1000 })
       const { items: messages } = result || {}
-      
+
       if (messages && messages.length > 0) {
         const transformedMessages = messages.map(msg => {
           let media = null
           if (msg.media_path) {
             const fileName = msg.media_path.split('/').pop()
             const fileExtension = fileName.split('.').pop().toLowerCase()
-            
+
             let mediaType = 'file'
             if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension)) {
               mediaType = 'image'
@@ -490,14 +514,14 @@ export function ChatProvider({ children }) {
             } else if (fileExtension === 'pdf') {
               mediaType = 'pdf'
             }
-            
+
             media = {
               type: mediaType,
               name: fileName,
               url: `${getApiBase().replace('/api', '')}/uploads/${msg.media_path}`
             }
           }
-          
+
           return {
             id: msg.id.toString(),
             author: msg.author,
@@ -507,7 +531,7 @@ export function ChatProvider({ children }) {
             media
           }
         })
-        
+
         setMessagesByChatId(prev => ({
           ...prev,
           [chatId]: [...(prev[chatId] || []), ...transformedMessages]
@@ -546,7 +570,8 @@ export function ChatProvider({ children }) {
     loadMoreMessages,
     goBack,
     logout,
-  }), [chats, activeChatId, setActiveChatIdWithMessages, importFromZip, isSidebarOpen, toggleSidebar, closeSidebar, globalUserName, setGlobalName, myNameByChatId, setMyName, viewer, openMedia, closeMedia, stepMedia, importStats, deleteChat, deleteMultipleChats, clearAllChats, fetchChatsFromAPI, isLoadingChats, fetchMessagesForChat, isLoadingMessages, messagesByChatId, loadMoreMessages, goBack, logout])
+    mergeChats,
+  }), [chats, activeChatId, setActiveChatIdWithMessages, importFromZip, isSidebarOpen, toggleSidebar, closeSidebar, globalUserName, setGlobalName, myNameByChatId, setMyName, viewer, openMedia, closeMedia, stepMedia, importStats, deleteChat, deleteMultipleChats, clearAllChats, fetchChatsFromAPI, isLoadingChats, fetchMessagesForChat, isLoadingMessages, messagesByChatId, loadMoreMessages, goBack, logout, mergeChats])
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
 }

@@ -53,6 +53,47 @@ export async function apiUploadZip(file, token) {
   return data
 }
 
+export async function apiUploadPreview(file, token) {
+  if (!file) throw new Error('zip file required')
+  const form = new FormData()
+  form.append('zip', file)
+
+  const res = await fetch(`${getApiBase()}/upload/preview`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const message = data?.error || (res.status === 400 ? 'Invalid ZIP file' : 'Preview failed')
+    const err = new Error(message)
+    err.status = res.status
+    throw err
+  }
+  return data
+}
+
+export async function apiUploadConfirm(previewId, targetChatId, token) {
+  if (!previewId) throw new Error('previewId required')
+
+  const res = await fetch(`${getApiBase()}/upload/confirm`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ previewId, targetChatId: targetChatId ?? null }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const message = data?.error || 'Import failed'
+    const err = new Error(message)
+    err.status = res.status
+    throw err
+  }
+  return data
+}
+
 export async function apiGetChats(token) {
   const res = await fetch(`${getApiBase()}/chats`, {
     method: 'GET',
@@ -72,7 +113,7 @@ export async function apiGetMessages(chatId, token, options = {}) {
   const { page = 1, limit = 100, search } = options
   const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() })
   if (search) params.append('search', search)
-  
+
   const res = await fetch(`${getApiBase()}/chats/${chatId}/messages?${params}`, {
     method: 'GET',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -143,4 +184,23 @@ export async function apiDeleteChat(id, token) {
   return data
 }
 
- 
+export async function apiMergeChats(chatIds, token) {
+  if (!chatIds || chatIds.length < 2) throw new Error('At least 2 chat IDs required')
+
+  const res = await fetch(`${getApiBase()}/chats/merge`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ chatIds }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const message = data?.error || 'Failed to merge chats'
+    const err = new Error(message)
+    err.status = res.status
+    throw err
+  }
+  return data
+}

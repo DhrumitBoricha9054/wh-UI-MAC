@@ -2,7 +2,7 @@ import { useChat } from '../state/ChatContext'
 import { useState, useMemo, useCallback, useRef } from 'react'
 
 export default function Sidebar() {
-  const { chats, activeChatId, setActiveChatId, isSidebarOpen, closeSidebar, deleteChat, deleteMultipleChats, clearAllChats, globalUserName, isLoadingChats } = useChat()
+  const { chats, activeChatId, setActiveChatId, isSidebarOpen, closeSidebar, deleteChat, deleteMultipleChats, clearAllChats, globalUserName, isLoadingChats, mergeChats } = useChat()
   const [isPerformingBulkAction, setIsPerformingBulkAction] = useState(false)
   const [isDeletingSingle, setIsDeletingSingle] = useState(null) // chatId being deleted
   const [searchQuery, setSearchQuery] = useState('')
@@ -13,6 +13,12 @@ export default function Sidebar() {
   const [deleteDialog, setDeleteDialog] = useState(null) // { type: 'single'|'bulk', chatId, chatName, count }
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
+
+  // Merge dialog state
+  const [showMergeDialog, setShowMergeDialog] = useState(false)
+  const [isMerging, setIsMerging] = useState(false)
+  const [mergeError, setMergeError] = useState(null)
+  const [mergeResult, setMergeResult] = useState(null)
 
   const openDeleteDialog = (type, { chatId, chatName, count } = {}) => {
     setDeleteError(null)
@@ -54,6 +60,34 @@ export default function Sidebar() {
       setDeleteError('Something went wrong. Please try again.')
     } finally {
       setIsDeleting(false)
+    }
+  }
+
+  // Handle merge confirmation
+  const handleConfirmMerge = async () => {
+    if (selectedChats.size < 2) return
+    setIsMerging(true)
+    setMergeError(null)
+    setMergeResult(null)
+    try {
+      const res = await mergeChats(Array.from(selectedChats))
+      if (res && res.ok) {
+        setMergeResult(res)
+        setSelectedChats(new Set())
+        setIsSelectionMode(false)
+        // Auto-close after 3 seconds
+        setTimeout(() => {
+          setShowMergeDialog(false)
+          setMergeResult(null)
+        }, 3000)
+      } else {
+        setMergeError('Failed to merge chats.')
+      }
+    } catch (err) {
+      console.error('Merge failed:', err)
+      setMergeError(err.message || 'Something went wrong. Please try again.')
+    } finally {
+      setIsMerging(false)
     }
   }
 
@@ -193,7 +227,23 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* Bulk Delete Controls */}
+        {/* Selection Mode Toggle */}
+        {!isLoadingChats && filteredChats.length >= 2 && !isSelectionMode && (
+          <div className="selection-toggle">
+            <button
+              className="enter-selection-btn"
+              onClick={() => { setIsSelectionMode(true); setSelectedChats(new Set()) }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="2" />
+                <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Select
+            </button>
+          </div>
+        )}
+
+        {/* Bulk Controls */}
         {filteredChats.length > 0 && isSelectionMode && (
           <div className="bulk-controls">
             <div className="bulk-controls-left">
@@ -203,10 +253,28 @@ export default function Sidebar() {
                   onClick={() => openDeleteDialog('bulk', { count: selectedChats.size })}
                   disabled={isPerformingBulkAction}
                 >
-                  {`Delete Selected (${selectedChats.size})`}
+                  {`Delete (${selectedChats.size})`}
+                </button>
+              )}
+              {selectedChats.size >= 2 && (
+                <button
+                  className="merge-selected"
+                  onClick={() => { setMergeError(null); setMergeResult(null); setShowMergeDialog(true) }}
+                  disabled={isPerformingBulkAction}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M8 6v12M16 6v12M8 12h8M4 6h4M16 6h4M4 18h4M16 18h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  {`Merge (${selectedChats.size})`}
                 </button>
               )}
             </div>
+            <button
+              className="exit-selection-btn"
+              onClick={() => { setIsSelectionMode(false); setSelectedChats(new Set()) }}
+            >
+              Cancel
+            </button>
           </div>
         )}
 
@@ -345,6 +413,79 @@ export default function Sidebar() {
         </div>
       )}
 
+      {/* Merge Confirmation Dialog */}
+      {showMergeDialog && (
+        <div className="delete-dialog-overlay" onClick={() => { if (!isMerging) { setShowMergeDialog(false); setMergeResult(null) } }}>
+          <div className="delete-dialog merge-dialog" onClick={(e) => e.stopPropagation()}>
+            {!mergeResult ? (
+              <>
+                <div className="delete-dialog-icon merge-icon">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+                    <path d="M8 6v12M16 6v12M8 12h8M4 6h4M16 6h4M4 18h4M16 18h4" stroke="#00b894" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </div>
+                <h3 className="delete-dialog-title">Merge {selectedChats.size} Chats?</h3>
+                <p className="delete-dialog-message">
+                  All messages will be combined into one chat. The chat with the most messages becomes the primary.
+                  Duplicate messages will be skipped. <strong>This cannot be undone.</strong>
+                </p>
+                {mergeError && (
+                  <div className="delete-dialog-error">{mergeError}</div>
+                )}
+                <div className="delete-dialog-actions">
+                  <button
+                    className="delete-dialog-cancel"
+                    onClick={() => { setShowMergeDialog(false); setMergeResult(null) }}
+                    disabled={isMerging}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="merge-dialog-confirm"
+                    onClick={handleConfirmMerge}
+                    disabled={isMerging}
+                  >
+                    {isMerging ? (
+                      <>
+                        <span className="btn-spinner"></span>
+                        Merging...
+                      </>
+                    ) : 'Merge'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="delete-dialog-icon merge-success-icon">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+                    <path d="M20 6L9 17l-5-5" stroke="#00b894" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+                <h3 className="delete-dialog-title">Chats Merged!</h3>
+                <div className="merge-result-stats">
+                  {mergeResult.movedMessages > 0 && (
+                    <div className="merge-stat">📨 {mergeResult.movedMessages} messages moved</div>
+                  )}
+                  {mergeResult.skippedDuplicates > 0 && (
+                    <div className="merge-stat">⏭ {mergeResult.skippedDuplicates} duplicates skipped</div>
+                  )}
+                  {mergeResult.deletedChats?.length > 0 && (
+                    <div className="merge-stat">🗑 {mergeResult.deletedChats.length} chat{mergeResult.deletedChats.length !== 1 ? 's' : ''} removed</div>
+                  )}
+                </div>
+                <button
+                  className="merge-dialog-confirm"
+                  style={{ marginTop: 16, width: '100%' }}
+                  onClick={() => { setShowMergeDialog(false); setMergeResult(null) }}
+                >
+                  Done
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <style jsx>{`
         .search-container {
           padding: 10px 14px;
@@ -469,6 +610,46 @@ export default function Sidebar() {
         
         .delete-selected:hover {
           background: #c0392b;
+        }
+
+        .selection-toggle {
+          padding: 6px 14px;
+          border-bottom: 1px solid #0e171c;
+          display: flex;
+          justify-content: flex-end;
+        }
+        .enter-selection-btn {
+          padding: 5px 12px;
+          background: none;
+          border: 1px solid rgba(134, 150, 160, 0.2);
+          border-radius: 6px;
+          color: #8696a0;
+          cursor: pointer;
+          font-size: 12px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          transition: all 0.2s ease;
+        }
+        .enter-selection-btn:hover {
+          background: rgba(255, 255, 255, 0.05);
+          color: #e9edef;
+          border-color: rgba(134, 150, 160, 0.4);
+        }
+        .exit-selection-btn {
+          padding: 6px 12px;
+          background: none;
+          border: 1px solid rgba(134, 150, 160, 0.2);
+          border-radius: 6px;
+          color: #8696a0;
+          cursor: pointer;
+          font-size: 12px;
+          transition: all 0.2s ease;
+          margin-left: auto;
+        }
+        .exit-selection-btn:hover {
+          background: rgba(255, 255, 255, 0.05);
+          color: #e9edef;
         }
 
         /* Chat List */
@@ -760,6 +941,74 @@ export default function Sidebar() {
           border-radius: 50%;
           animation: spin 0.6s linear infinite;
           flex-shrink: 0;
+        }
+
+        /* ===== Merge Button & Dialog ===== */
+        .merge-selected {
+          padding: 6px 12px;
+          background: #00b894;
+          border: 1px solid #019c7d;
+          border-radius: 6px;
+          color: white;
+          cursor: pointer;
+          font-size: 12px;
+          transition: all 0.2s ease;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .merge-selected:hover {
+          background: #019c7d;
+        }
+        .merge-selected:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .merge-icon {
+          background: rgba(0, 184, 148, 0.12) !important;
+        }
+        .merge-success-icon {
+          background: rgba(0, 184, 148, 0.12) !important;
+        }
+
+        .merge-dialog-confirm {
+          flex: 1;
+          padding: 11px 16px;
+          border-radius: 10px;
+          font-size: 15px;
+          font-weight: 600;
+          cursor: pointer;
+          border: none;
+          transition: all 0.15s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          background: #00b894;
+          color: white;
+        }
+        .merge-dialog-confirm:hover {
+          background: #019c7d;
+        }
+        .merge-dialog-confirm:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
+        .merge-result-stats {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-top: 12px;
+          text-align: left;
+        }
+        .merge-stat {
+          font-size: 14px;
+          color: #8696a0;
+          padding: 8px 12px;
+          background: rgba(255, 255, 255, 0.04);
+          border-radius: 8px;
         }
       `}</style>
     </>

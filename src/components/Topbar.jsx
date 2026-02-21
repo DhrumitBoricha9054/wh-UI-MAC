@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useChat } from '../state/ChatContext'
-import { apiUploadZip } from '../lib/api'
+import { apiUploadZip, apiUploadPreview, apiUploadConfirm } from '../lib/api'
 
 
 async function apiChangePassword(oldPassword, newPassword, token) {
@@ -31,6 +31,14 @@ export default function Topbar() {
   const [pwdSuccess, setPwdSuccess] = useState('')
   const [zipResponse, setZipResponse] = useState(null)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
+
+  // Two-step import state
+  const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const [previewData, setPreviewData] = useState(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [selectedTarget, setSelectedTarget] = useState('suggested') // 'suggested', 'new', or a chat id
+  const [isConfirming, setIsConfirming] = useState(false)
+  const [previewError, setPreviewError] = useState('')
 
   const handleLogout = () => {
     if (logout) {
@@ -65,63 +73,140 @@ export default function Topbar() {
     }
   }
 
+  // Format date range nicely
+  const formatDateRange = (from, to) => {
+    const opts = { month: 'short', day: 'numeric', year: 'numeric' }
+    try {
+      const fromDate = new Date(from)
+      const toDate = new Date(to)
+      if (isNaN(fromDate) || isNaN(toDate)) return `${from} → ${to}`
+      return `${fromDate.toLocaleDateString('en-US', opts)} → ${toDate.toLocaleDateString('en-US', opts)}`
+    } catch {
+      return `${from} → ${to}`
+    }
+  }
+
+  // Get confidence badge color
+  const getConfidenceBadge = (confidence) => {
+    if (confidence >= 80) return { color: '#00b894', bg: 'rgba(0, 184, 148, 0.15)', label: 'Strong match' }
+    if (confidence >= 50) return { color: '#ffd600', bg: 'rgba(255, 214, 0, 0.15)', label: 'Possible match' }
+    return { color: '#ff6b6b', bg: 'rgba(255, 107, 107, 0.15)', label: 'Weak match' }
+  }
+
+  // Get match reason text
+  const getMatchReason = (matchStep) => {
+    switch (matchStep) {
+      case 'exact_name': return 'Same chat name'
+      case 'participant_overlap': return 'Similar members'
+      case 'generic_name_with_overlap': return 'Possible match'
+      default: return 'Auto-detected'
+    }
+  }
+
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
 
     if (!file) return
 
+    const token = localStorage.getItem('auth_token')
+
+    // For logged-in users, use two-step preview flow
+    if (token) {
+      setPreviewLoading(true)
+      setPreviewError('')
+      setShowPreviewModal(true)
+      setPreviewData(null)
+      setSelectedTarget('suggested')
+
+      try {
+        const result = await apiUploadPreview(file, token)
+        console.log('📦 Preview API response:', JSON.stringify(result, null, 2))
+        setPreviewData(result)
+        // Pre-select suggested match if available, otherwise default to "new"
+        if (result.suggestedMatch) {
+          setSelectedTarget('suggested')
+        } else {
+          setSelectedTarget('new')
+        }
+      } catch (err) {
+        if (err?.status === 401) {
+          alert('Session expired. Please log in again.')
+          localStorage.removeItem('auth_token')
+          localStorage.removeItem('auth_user')
+          window.location.reload()
+          return
+        }
+        setPreviewError(err.message || 'Failed to preview ZIP file')
+      } finally {
+        setPreviewLoading(false)
+      }
+      return
+    }
+
+    // For non-logged-in users, use the old direct import
     setIsUploading(true)
     setUploadProgress(0)
-
     try {
-      const token = localStorage.getItem('auth_token')
-
-      // Simulate progress for better UX
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval)
-            return 90
-          }
-          return prev + Math.random() * 30
-        })
-      }, 200)
-
-      if (token) {
-        const result = await apiUploadZip(file, token)
-        // Complete the progress
-        clearInterval(progressInterval)
-        setUploadProgress(100)
-        setZipResponse(result)
-        setTimeout(() => {
-          setIsUploading(false)
-          setUploadProgress(0)
-        }, 500)
-        // Refresh chat list after successful upload
-        await fetchChatsFromAPI()
-      } else {
-        await importFromZip(file)
-        clearInterval(progressInterval)
-        setUploadProgress(100)
-        setTimeout(() => {
-          setIsUploading(false)
-          setUploadProgress(0)
-        }, 500)
-      }
+      await importFromZip(file)
+      setUploadProgress(100)
+      setTimeout(() => {
+        setIsUploading(false)
+        setUploadProgress(0)
+      }, 500)
     } catch (err) {
       setIsUploading(false)
       setUploadProgress(0)
+      alert(err.message || 'Failed to import ZIP')
+    }
+  }
 
-      if (err?.status === 401) {
+  // Confirm import with selected target
+  const handleConfirmImport = async () => {
+    if (!previewData?.previewId) return
+
+    const token = localStorage.getItem('auth_token')
+    if (!token) return
+
+    setIsConfirming(true)
+    setPreviewError('')
+
+    try {
+      let targetChatId = null
+      if (selectedTarget === 'suggested' && previewData.suggestedMatch) {
+        targetChatId = previewData.suggestedMatch.chatId
+      } else if (selectedTarget !== 'new' && selectedTarget !== 'suggested') {
+        targetChatId = selectedTarget
+      }
+
+      const result = await apiUploadConfirm(previewData.previewId, targetChatId, token)
+      setZipResponse(result)
+      setShowPreviewModal(false)
+      setPreviewData(null)
+      // Refresh chat list
+      await fetchChatsFromAPI()
+    } catch (err) {
+      if (err?.status === 410 || err?.status === 404) {
+        setPreviewError('Preview expired. Please upload again.')
+      } else if (err?.status === 401) {
         alert('Session expired. Please log in again.')
         localStorage.removeItem('auth_token')
         localStorage.removeItem('auth_user')
         window.location.reload()
         return
+      } else {
+        setPreviewError(err.message || 'Import failed. Please try again.')
       }
-      alert(err.message || 'Failed to import/upload ZIP')
+    } finally {
+      setIsConfirming(false)
     }
+  }
+
+  const closePreviewModal = () => {
+    setShowPreviewModal(false)
+    setPreviewData(null)
+    setPreviewError('')
+    setSelectedTarget('suggested')
   }
 
   // Get active chat info for mobile header
@@ -350,8 +435,205 @@ export default function Topbar() {
         </div>
       )}
 
+      {/* === Import Preview Modal === */}
+      {showPreviewModal && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget && !isConfirming) closePreviewModal() }}>
+          <div className="preview-modal">
+            {/* Header */}
+            <div className="preview-header">
+              <div className="preview-header-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="#00b894" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <h2>Import Chat</h2>
+              <p className="preview-subtitle">Choose where to import this chat</p>
+            </div>
 
-      {/* Upload Progress Bar */}
+            {/* Loading State */}
+            {previewLoading && (
+              <div className="preview-loading">
+                <div className="preview-spinner"></div>
+                <span>Analyzing ZIP file...</span>
+              </div>
+            )}
+
+            {/* Error State */}
+            {previewError && !previewLoading && (
+              <div className="preview-error-box">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="#ff6b6b" strokeWidth="2" />
+                  <path d="M12 8v4M12 16h.01" stroke="#ff6b6b" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                <span>{previewError}</span>
+              </div>
+            )}
+
+            {/* Preview Content */}
+            {previewData && !previewLoading && (
+              <>
+                {/* Section A: ZIP Preview Info */}
+                <div className="preview-info-card">
+                  <div className="preview-info-row">
+                    <span className="preview-info-label">Chat Name</span>
+                    <span className="preview-info-value">{previewData.parsedChats?.[0]?.name || 'Unnamed Chat'}</span>
+                  </div>
+                  <div className="preview-info-row">
+                    <span className="preview-info-label">Participants</span>
+                    <span className="preview-info-value preview-participants">
+                      {previewData.parsedChats?.[0]?.participants?.join(', ') || 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="preview-info-row">
+                    <span className="preview-info-label">Messages</span>
+                    <span className="preview-info-value">{previewData.parsedChats?.[0]?.messageCount || 0}</span>
+                  </div>
+                  {previewData.parsedChats?.[0]?.dateRange && (
+                    <div className="preview-info-row">
+                      <span className="preview-info-label">Date Range</span>
+                      <span className="preview-info-value">
+                        {formatDateRange(previewData.parsedChats[0].dateRange.from, previewData.parsedChats[0].dateRange.to)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Section B: Where to import */}
+                <div className="preview-target-section">
+                  <h3 className="preview-section-title">Import destination</h3>
+
+                  {/* Suggested Match */}
+                  {previewData.suggestedMatch && (() => {
+                    const badge = getConfidenceBadge(previewData.suggestedMatch.confidence)
+                    return (
+                      <label
+                        className={`preview-target-card suggested ${selectedTarget === 'suggested' ? 'selected' : ''}`}
+                        onClick={() => setSelectedTarget('suggested')}
+                      >
+                        <input
+                          type="radio"
+                          name="importTarget"
+                          checked={selectedTarget === 'suggested'}
+                          onChange={() => setSelectedTarget('suggested')}
+                        />
+                        <div className="target-card-content">
+                          <div className="target-card-top">
+                            <span className="target-card-name">{previewData.suggestedMatch.chatName}</span>
+                            <span className="confidence-badge" style={{ color: badge.color, background: badge.bg }}>
+                              {previewData.suggestedMatch.confidence}% • {badge.label}
+                            </span>
+                          </div>
+                          <div className="target-card-meta">
+                            <span className="target-card-participants">
+                              {previewData.suggestedMatch.participants?.join(', ')}
+                            </span>
+                            <span className="target-card-reason">
+                              {getMatchReason(previewData.suggestedMatch.matchStep)}
+                            </span>
+                          </div>
+                          <div className="recommended-tag">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="#00b894" />
+                            </svg>
+                            Recommended
+                          </div>
+                        </div>
+                      </label>
+                    )
+                  })()}
+
+                  {/* Existing Chats List */}
+                  {previewData.existingChats?.filter(c => c.id !== previewData.suggestedMatch?.chatId).length > 0 && (
+                    <div className="preview-existing-section">
+                      <div className="preview-existing-label">Or merge into another chat:</div>
+                      <div className="preview-existing-list">
+                        {previewData.existingChats
+                          .filter(c => c.id !== previewData.suggestedMatch?.chatId)
+                          .map(chat => (
+                            <label
+                              key={chat.id}
+                              className={`preview-target-card ${selectedTarget === chat.id ? 'selected' : ''}`}
+                              onClick={() => setSelectedTarget(chat.id)}
+                            >
+                              <input
+                                type="radio"
+                                name="importTarget"
+                                checked={selectedTarget === chat.id}
+                                onChange={() => setSelectedTarget(chat.id)}
+                              />
+                              <div className="target-card-content">
+                                <div className="target-card-top">
+                                  <span className="target-card-name">{chat.name}</span>
+                                  <span className="target-card-count">{chat.messageCount} msgs</span>
+                                </div>
+                                <div className="target-card-meta">
+                                  <span className="target-card-participants">
+                                    {chat.participants?.join(', ') || 'No participants'}
+                                  </span>
+                                </div>
+                              </div>
+                            </label>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Create New Chat Option */}
+                  <label
+                    className={`preview-target-card new-chat ${selectedTarget === 'new' ? 'selected' : ''}`}
+                    onClick={() => setSelectedTarget('new')}
+                  >
+                    <input
+                      type="radio"
+                      name="importTarget"
+                      checked={selectedTarget === 'new'}
+                      onChange={() => setSelectedTarget('new')}
+                    />
+                    <div className="target-card-content">
+                      <div className="target-card-top">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                          <path d="M12 5v14M5 12h14" stroke="#00b894" strokeWidth="2" strokeLinecap="round" />
+                        </svg>
+                        <span className="target-card-name">Create as new chat</span>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </>
+            )}
+
+            {/* Actions */}
+            <div className="preview-actions">
+              <button
+                className="preview-cancel-btn"
+                onClick={closePreviewModal}
+                disabled={isConfirming}
+              >
+                Cancel
+              </button>
+              <button
+                className="preview-import-btn"
+                onClick={handleConfirmImport}
+                disabled={isConfirming || previewLoading || (!previewData && !previewError)}
+              >
+                {isConfirming ? (
+                  <>
+                    <div className="spinner"></div>
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Import
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {isUploading && (
         <div className="progress-container">
           <div className="progress-bar">
@@ -1100,6 +1382,319 @@ export default function Topbar() {
         @keyframes slideInRight {
           from { transform: translateX(100%); opacity: 0; }
           to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* ====================================== */
+        /* === IMPORT PREVIEW MODAL STYLES ====== */
+        /* ====================================== */
+        .preview-modal {
+          background: #1a2730;
+          border-radius: 20px;
+          width: 520px;
+          max-width: 95vw;
+          max-height: 85vh;
+          overflow-y: auto;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+          animation: fadeIn 0.3s ease;
+          padding: 28px;
+        }
+        .preview-modal::-webkit-scrollbar {
+          width: 4px;
+        }
+        .preview-modal::-webkit-scrollbar-thumb {
+          background: rgba(134, 150, 160, 0.3);
+          border-radius: 2px;
+        }
+
+        .preview-header {
+          text-align: center;
+          margin-bottom: 24px;
+        }
+        .preview-header-icon {
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          background: rgba(0, 184, 148, 0.12);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin: 0 auto 12px;
+        }
+        .preview-header h2 {
+          margin: 0;
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: #e9edef;
+        }
+        .preview-subtitle {
+          margin: 6px 0 0;
+          font-size: 0.9rem;
+          color: #8696a0;
+        }
+
+        /* Loading */
+        .preview-loading {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 16px;
+          padding: 40px 0;
+          color: #8696a0;
+          font-size: 0.95rem;
+        }
+        .preview-spinner {
+          width: 32px;
+          height: 32px;
+          border: 3px solid rgba(0, 184, 148, 0.2);
+          border-top: 3px solid #00b894;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        /* Error */
+        .preview-error-box {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 14px 16px;
+          background: rgba(255, 107, 107, 0.1);
+          border: 1px solid rgba(255, 107, 107, 0.25);
+          border-radius: 10px;
+          color: #ff6b6b;
+          font-size: 0.9rem;
+          margin-bottom: 16px;
+        }
+
+        /* Info Card */
+        .preview-info-card {
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(134, 150, 160, 0.12);
+          border-radius: 12px;
+          padding: 16px;
+          margin-bottom: 20px;
+        }
+        .preview-info-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          padding: 8px 0;
+        }
+        .preview-info-row:not(:last-child) {
+          border-bottom: 1px solid rgba(134, 150, 160, 0.08);
+        }
+        .preview-info-label {
+          font-size: 0.8rem;
+          color: #8696a0;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          flex-shrink: 0;
+          margin-right: 12px;
+        }
+        .preview-info-value {
+          font-size: 0.9rem;
+          color: #e9edef;
+          font-weight: 500;
+          text-align: right;
+        }
+        .preview-participants {
+          font-size: 0.85rem;
+          max-width: 300px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        /* Target Section */
+        .preview-target-section {
+          margin-bottom: 20px;
+        }
+        .preview-section-title {
+          font-size: 0.85rem;
+          font-weight: 600;
+          color: #8696a0;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin: 0 0 12px;
+        }
+
+        /* Target Cards */
+        .preview-target-card {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          padding: 14px 16px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1.5px solid rgba(134, 150, 160, 0.12);
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          margin-bottom: 8px;
+        }
+        .preview-target-card:hover {
+          background: rgba(255, 255, 255, 0.06);
+          border-color: rgba(134, 150, 160, 0.25);
+        }
+        .preview-target-card.selected {
+          background: rgba(0, 184, 148, 0.08);
+          border-color: #00b894;
+        }
+        .preview-target-card input[type="radio"] {
+          margin-top: 3px;
+          accent-color: #00b894;
+          flex-shrink: 0;
+        }
+        .target-card-content {
+          flex: 1;
+          min-width: 0;
+        }
+        .target-card-top {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .target-card-name {
+          font-size: 0.95rem;
+          font-weight: 600;
+          color: #e9edef;
+        }
+        .target-card-count {
+          font-size: 0.8rem;
+          color: #8696a0;
+          margin-left: auto;
+        }
+        .confidence-badge {
+          font-size: 0.75rem;
+          font-weight: 600;
+          padding: 2px 8px;
+          border-radius: 20px;
+          white-space: nowrap;
+        }
+        .target-card-meta {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 4px;
+          flex-wrap: wrap;
+        }
+        .target-card-participants {
+          font-size: 0.8rem;
+          color: #8696a0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          max-width: 280px;
+        }
+        .target-card-reason {
+          font-size: 0.75rem;
+          color: #5f7d8e;
+          font-style: italic;
+        }
+        .recommended-tag {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #00b894;
+          margin-top: 6px;
+        }
+
+        /* Existing Chats Section */
+        .preview-existing-section {
+          margin-top: 12px;
+        }
+        .preview-existing-label {
+          font-size: 0.8rem;
+          color: #667781;
+          margin-bottom: 8px;
+        }
+        .preview-existing-list {
+          max-height: 200px;
+          overflow-y: auto;
+          padding-right: 4px;
+        }
+        .preview-existing-list::-webkit-scrollbar {
+          width: 3px;
+        }
+        .preview-existing-list::-webkit-scrollbar-thumb {
+          background: rgba(134, 150, 160, 0.25);
+          border-radius: 2px;
+        }
+
+        /* New Chat Option */
+        .preview-target-card.new-chat .target-card-top {
+          gap: 10px;
+        }
+        .preview-target-card.new-chat .target-card-name {
+          color: #00b894;
+        }
+
+        /* Actions */
+        .preview-actions {
+          display: flex;
+          gap: 12px;
+          margin-top: 4px;
+        }
+        .preview-cancel-btn {
+          flex: 1;
+          padding: 14px;
+          border-radius: 12px;
+          border: none;
+          background: rgba(134, 150, 160, 0.15);
+          color: #8696a0;
+          font-size: 1rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .preview-cancel-btn:hover:enabled {
+          background: rgba(134, 150, 160, 0.25);
+          color: #e9edef;
+        }
+        .preview-cancel-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .preview-import-btn {
+          flex: 1;
+          padding: 14px;
+          border-radius: 12px;
+          border: none;
+          background: #00b894;
+          color: white;
+          font-size: 1rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+        }
+        .preview-import-btn:hover:enabled {
+          background: #019c7d;
+        }
+        .preview-import-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        /* Mobile adjustments for preview modal */
+        @media (max-width: 768px) {
+          .preview-modal {
+            width: 100%;
+            max-width: 100vw;
+            max-height: 90vh;
+            border-radius: 16px 16px 0 0;
+            padding: 20px;
+          }
+          .preview-participants {
+            max-width: 180px;
+          }
+          .target-card-participants {
+            max-width: 180px;
+          }
         }
       `}</style>
     </div>
