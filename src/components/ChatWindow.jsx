@@ -1,11 +1,13 @@
-import { useMemo, useEffect, useLayoutEffect, useState, useRef } from 'react'
+import { useMemo, useEffect, useState, useRef, memo, useCallback, forwardRef } from 'react'
 import { useChat } from '../state/ChatContext'
+import { Virtuoso } from 'react-virtuoso'
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist'
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 GlobalWorkerOptions.workerSrc = pdfjsWorker
 
-function MessageBubble({ message, meName }) {
+/* ── Memoized message bubble ── */
+const MessageBubble = memo(function MessageBubble({ message, meName, isHighlighted }) {
   const isMe = useMemo(() => {
     if (!meName) return message.author === 'You'
     return message.author.trim().toLowerCase() === meName.trim().toLowerCase()
@@ -20,11 +22,10 @@ function MessageBubble({ message, meName }) {
     const minutes = date.getMinutes();
     const ampm = hours >= 12 ? 'PM' : 'AM';
     hours = hours % 12;
-    hours = hours ? hours : 12; // the hour '0' should be '12'
+    hours = hours ? hours : 12;
     const mins = minutes < 10 ? '0' + minutes : minutes;
     return `${hours}:${mins} ${ampm}`;
   };
-
 
   // Remove <attached: ...> from content if still present
   let cleanContent = message.content.replace(/<\s*attached:[^>]+>/gi, '').trim();
@@ -59,7 +60,11 @@ function MessageBubble({ message, meName }) {
   };
 
   return (
-    <div className={`bubble ${isMe ? 'me' : 'other'}`} data-message-id={message.id}>
+    <div
+      className={`bubble ${isMe ? 'me' : 'other'}`}
+      data-message-id={message.id}
+      style={isHighlighted ? { backgroundColor: '#00b89420', transition: 'background-color 0.3s ease' } : undefined}
+    >
       <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderContent(cleanContent)}</div>
       {message.media && (
         <div className="media">
@@ -77,7 +82,7 @@ function MessageBubble({ message, meName }) {
           )}
           {(!message.media.url || message.media.type === 'file') && (
             <div>
-              <a href={message.media.url || '#'} download={message.media.name} style={{ color: '#53beb' }}>
+              <a href={message.media.url || '#'} download={message.media.name} style={{ color: '#53bdeb' }}>
                 {message.media.name || 'attachment'}
               </a>
             </div>
@@ -91,20 +96,68 @@ function MessageBubble({ message, meName }) {
       </div>
     </div>
   )
-}
+})
 
+/* ── Custom Scroller with wallpaper background ── */
+const ChatScroller = forwardRef(function ChatScroller(props, ref) {
+  return (
+    <div
+      {...props}
+      ref={ref}
+      className="messages chat-wallpaper"
+      style={{
+        ...props.style,
+        outline: 'none',
+      }}
+      tabIndex={0}
+    />
+  )
+})
+
+/* ── Custom List wrapper ── */
+const ChatListWrapper = forwardRef(function ChatListWrapper(props, ref) {
+  return (
+    <div
+      {...props}
+      ref={ref}
+      style={{
+        ...props.style,
+      }}
+    />
+  )
+})
+
+/* ── Custom Item wrapper preserving flex column layout for bubble alignment ── */
+const ChatItemContent = forwardRef(function ChatItemContent(props, ref) {
+  return (
+    <div
+      {...props}
+      ref={ref}
+      style={{
+        ...props.style,
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '2px 16px',
+      }}
+    />
+  )
+})
+
+/* ── Main Chat Window ── */
 export default function ChatWindow() {
   const { chats, activeChatId, globalUserName, messagesByChatId, isLoadingMessages } = useChat()
   const activeChat = chats.find((c) => c.id === activeChatId)
   const [messageSearchQuery, setMessageSearchQuery] = useState('')
   const [currentMessageIndex, setCurrentMessageIndex] = useState(-1)
-  const [stuckDateKey, setStuckDateKey] = useState(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
-  const messagesContainerRef = useRef(null)
-  const dateElementsRef = useRef(new Map())
+  const [floatingDate, setFloatingDate] = useState(null)
+  const [showFloatingDate, setShowFloatingDate] = useState(false)
+  const [highlightedMessageId, setHighlightedMessageId] = useState(null)
+  const virtuosoRef = useRef(null)
+  const floatingDateTimeoutRef = useRef(null)
 
   // Helper to format date as WhatsApp style (e.g., Fri, 3 Oct)
-  const formatDate = (ts) => {
+  const formatDate = useCallback((ts) => {
     if (!ts) return '';
     const date = new Date(ts);
     if (isNaN(date.getTime())) return ts;
@@ -131,10 +184,10 @@ export default function ChatWindow() {
       month: 'short',
       year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
     });
-  };
+  }, []);
 
   // Group messages by date string
-  const groupMessagesByDate = (messages) => {
+  const groupMessagesByDate = useCallback((messages) => {
     const groups = [];
     let lastDate = null;
     messages.forEach((msg) => {
@@ -146,7 +199,7 @@ export default function ChatWindow() {
       groups.push({ type: 'msg', message: msg, key: msg.id });
     });
     return groups;
-  };
+  }, [formatDate]);
 
   // Filter messages based on search query
   const filteredMessages = useMemo(() => {
@@ -160,8 +213,33 @@ export default function ChatWindow() {
     )
   }, [activeChat, messageSearchQuery, messagesByChatId, activeChatId])
 
+  // Grouped items for virtuoso
+  const groupedItems = useMemo(() => {
+    return groupMessagesByDate(filteredMessages)
+  }, [filteredMessages, groupMessagesByDate])
+
+  // Track floating date from visible range
+  const handleRangeChanged = useCallback(({ startIndex }) => {
+    // Find the most recent date separator at or before startIndex
+    for (let i = startIndex; i >= 0; i--) {
+      if (groupedItems[i]?.type === 'date') {
+        setFloatingDate(groupedItems[i].date)
+        break
+      }
+    }
+
+    // Show floating date briefly on scroll
+    setShowFloatingDate(true)
+    if (floatingDateTimeoutRef.current) {
+      clearTimeout(floatingDateTimeoutRef.current)
+    }
+    floatingDateTimeoutRef.current = setTimeout(() => {
+      setShowFloatingDate(false)
+    }, 1500)
+  }, [groupedItems])
+
   // Find next/previous search result
-  const findNextResult = (direction = 1) => {
+  const findNextResult = useCallback((direction = 1) => {
     if (filteredMessages.length === 0) return
 
     let newIndex = currentMessageIndex + direction
@@ -170,210 +248,66 @@ export default function ChatWindow() {
 
     setCurrentMessageIndex(newIndex)
 
-    // Scroll to the message
-    const messageElement = document.querySelector(`[data-message-id="${filteredMessages[newIndex].id}"]`)
-    if (messageElement) {
-      messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      messageElement.style.backgroundColor = '#00b89420'
+    // Find the message in groupedItems
+    const targetMsg = filteredMessages[newIndex]
+    const groupedIndex = groupedItems.findIndex(
+      item => item.type === 'msg' && item.message.id === targetMsg.id
+    )
+
+    if (groupedIndex >= 0 && virtuosoRef.current) {
+      virtuosoRef.current.scrollToIndex({
+        index: groupedIndex,
+        align: 'center',
+        behavior: 'smooth'
+      })
+
+      // Highlight the message temporarily
+      setHighlightedMessageId(targetMsg.id)
       setTimeout(() => {
-        messageElement.style.backgroundColor = ''
+        setHighlightedMessageId(null)
       }, 2000)
     }
-  }
+  }, [filteredMessages, currentMessageIndex, groupedItems])
 
-  // Track which date should be stuck at top
+  // Auto-clear highlight
   useEffect(() => {
-    const messagesDiv = messagesContainerRef.current;
-    if (!messagesDiv || filteredMessages.length === 0) {
-      setStuckDateKey(null);
-      // Clear all stuck-original classes
-      dateElementsRef.current.forEach((el) => {
-        if (el) el.classList.remove('stuck-original');
-      });
-      return;
-    }
-
-    const updateStuckDate = () => {
-      const container = messagesContainerRef.current;
-      if (!container) return;
-
-      const scrollTop = container.scrollTop;
-      const containerRect = container.getBoundingClientRect();
-
-      // Get all date elements and their positions, sorted by position
-      const dateEntries = Array.from(dateElementsRef.current.entries())
-        .map(([dateKey, element]) => {
-          if (!element) return null;
-          const elementRect = element.getBoundingClientRect();
-          const elementTop = element.offsetTop; // Original position in the document
-          return { dateKey, element, elementTop, elementRect };
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.elementTop - b.elementTop);
-
-      // Find the last date that has scrolled past the top (should be stuck)
-      let stuckKey = null;
-      for (const { dateKey, elementTop } of dateEntries) {
-        // If the original position has scrolled past the top, this date should be stuck
-        if (elementTop <= scrollTop + 50) {
-          stuckKey = dateKey;
-        } else {
-          break;
-        }
-      }
-
-      setStuckDateKey(stuckKey);
-
-      // Update visibility: hide original content when stuck and original position is scrolled past
-      dateEntries.forEach(({ dateKey, element, elementTop, elementRect }) => {
-        if (dateKey === stuckKey) {
-          // Check if the original position is above the viewport
-          // When elementTop < scrollTop, the original position has scrolled past
-          // When elementRect.top is near containerRect.top, it's stuck at the top
-          const isOriginalScrolledPast = elementTop < scrollTop - 10;
-          const isStuckAtTop = Math.abs(elementRect.top - containerRect.top) < 30;
-
-          if (isOriginalScrolledPast && isStuckAtTop) {
-            element.classList.add('stuck-original');
-          } else {
-            element.classList.remove('stuck-original');
-          }
-        } else {
-          element.classList.remove('stuck-original');
-        }
-      });
-    };
-
-    // Initial update after a short delay to ensure DOM is ready
-    const initialTimeout = setTimeout(updateStuckDate, 150);
-
-    // Update on scroll with throttling
-    let scrollTimeout;
-    const handleScroll = () => {
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(updateStuckDate, 16); // ~60fps
-    };
-
-    messagesDiv.addEventListener('scroll', handleScroll, { passive: true });
-
-    // Also update when messages change
-    const changeTimeout = setTimeout(updateStuckDate, 300);
-
     return () => {
-      clearTimeout(initialTimeout);
-      clearTimeout(changeTimeout);
-      clearTimeout(scrollTimeout);
-      messagesDiv.removeEventListener('scroll', handleScroll);
-      // Cleanup classes
-      dateElementsRef.current.forEach((el) => {
-        if (el) el.classList.remove('stuck-original');
-      });
-    };
-  }, [activeChatId, filteredMessages]);
-
-  // Track if user has manually scrolled (don't auto-scroll if they have)
-  const userHasScrolledRef = useRef(false);
-  const lastScrollHeightRef = useRef(0);
-
-  // Immediate scroll on chat change using useLayoutEffect (runs synchronously)
-  useLayoutEffect(() => {
-    if (!activeChatId || !messagesContainerRef.current) return;
-
-    const messagesDiv = messagesContainerRef.current;
-    const currentHeight = messagesDiv.scrollHeight;
-
-    // Only auto-scroll if this is a new chat or content grew significantly
-    // Reset user scroll flag when chat changes
-    if (activeChatId) {
-      userHasScrolledRef.current = false;
+      if (floatingDateTimeoutRef.current) {
+        clearTimeout(floatingDateTimeoutRef.current)
+      }
     }
+  }, [])
 
-    // Scroll immediately if content height increased or it's a new chat
-    if (currentHeight > lastScrollHeightRef.current || !lastScrollHeightRef.current) {
-      messagesDiv.scrollTop = currentHeight;
-      lastScrollHeightRef.current = currentHeight;
-    }
-  }, [activeChatId, filteredMessages.length]);
-
-  // Track user scroll to prevent auto-scroll when user scrolls up
+  // Reset search state when chat changes
   useEffect(() => {
-    const messagesDiv = messagesContainerRef.current;
-    if (!messagesDiv) return;
+    setMessageSearchQuery('')
+    setCurrentMessageIndex(-1)
+    setIsSearchOpen(false)
+    setHighlightedMessageId(null)
+  }, [activeChatId])
 
-    const handleScroll = () => {
-      const isAtBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 50;
-      userHasScrolledRef.current = !isAtBottom;
-    };
-
-    messagesDiv.addEventListener('scroll', handleScroll, { passive: true });
-    return () => messagesDiv.removeEventListener('scroll', handleScroll);
-  }, [activeChatId]);
-
-  // Use ResizeObserver to scroll as content grows (for long chats loading progressively)
-  useEffect(() => {
-    if (!activeChatId || !messagesContainerRef.current) return;
-
-    const messagesDiv = messagesContainerRef.current;
-    let resizeObserver = null;
-
-    // Only auto-scroll if user hasn't manually scrolled up
-    const shouldAutoScroll = () => {
-      return !userHasScrolledRef.current;
-    };
-
-    // Scroll to bottom helper
-    const scrollToBottom = () => {
-      if (messagesDiv && shouldAutoScroll()) {
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        lastScrollHeightRef.current = messagesDiv.scrollHeight;
-      }
-    };
-
-    // Use ResizeObserver to detect when content height changes
-    if (typeof ResizeObserver !== 'undefined') {
-      resizeObserver = new ResizeObserver((entries) => {
-        for (const entry of entries) {
-          const newHeight = entry.target.scrollHeight;
-          if (newHeight > lastScrollHeightRef.current && shouldAutoScroll()) {
-            // Content grew, scroll to bottom
-            requestAnimationFrame(() => {
-              scrollToBottom();
-            });
-          }
-          lastScrollHeightRef.current = newHeight;
-        }
-      });
-
-      resizeObserver.observe(messagesDiv);
+  // Render each item in the virtuoso list
+  const itemContent = useCallback((index, item) => {
+    if (item.type === 'date') {
+      return (
+        <div className="date-separator-virtual" data-date={item.date}>
+          <span className="date-text">{item.date}</span>
+        </div>
+      )
     }
+    return (
+      <MessageBubble
+        message={item.message}
+        meName={globalUserName}
+        isHighlighted={item.message.id === highlightedMessageId}
+      />
+    )
+  }, [globalUserName, highlightedMessageId])
 
-    // Fallback: Also handle media loading (non-blocking)
-    const mediaElements = messagesDiv.querySelectorAll('img[src], video[src], audio[src]');
-    const handleMediaLoad = () => {
-      if (shouldAutoScroll()) {
-        requestAnimationFrame(() => {
-          scrollToBottom();
-        });
-      }
-    };
-
-    mediaElements.forEach((el) => {
-      if (!el.complete && el.readyState !== 4) {
-        el.addEventListener('load', handleMediaLoad, { once: true });
-        el.addEventListener('loadeddata', handleMediaLoad, { once: true });
-      }
-    });
-
-    return () => {
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
-      mediaElements.forEach((el) => {
-        el.removeEventListener('load', handleMediaLoad);
-        el.removeEventListener('loadeddata', handleMediaLoad);
-      });
-    };
-  }, [activeChatId, filteredMessages.length]);
+  // Compute item key for stable rendering
+  const computeItemKey = useCallback((index, item) => {
+    return item?.key || index
+  }, [])
 
   return (
     <main className="chat-window" role="main">
@@ -471,33 +405,34 @@ export default function ChatWindow() {
             </div>
           </div>
 
-          <div className="messages chat-wallpaper" ref={messagesContainerRef} tabIndex={0} style={{ outline: 'none' }} onMouseDown={(e) => e.stopPropagation()}>
-            {filteredMessages.length === 0 && messageSearchQuery ? (
+          <div className="virtuoso-container" style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+            {/* Floating date badge */}
+            {floatingDate && (
+              <div className={`floating-date-badge ${showFloatingDate ? 'visible' : ''}`}>
+                <span className="date-text">{floatingDate}</span>
+              </div>
+            )}
+
+            {groupedItems.length === 0 && messageSearchQuery ? (
               <div className="empty-messages">No messages found for "{messageSearchQuery}"</div>
-            ) : filteredMessages.length === 0 && !messageSearchQuery ? (
+            ) : groupedItems.length === 0 && !messageSearchQuery ? (
               <div className="empty-messages">No messages available for this chat</div>
             ) : (
-              groupMessagesByDate(filteredMessages).map((item) =>
-                item.type === 'date' ? (
-                  <div
-                    key={item.key}
-                    ref={(el) => {
-                      if (el) {
-                        dateElementsRef.current.set(item.key, el);
-                      } else {
-                        dateElementsRef.current.delete(item.key);
-                      }
-                    }}
-                    data-date-key={item.key}
-                    data-date={item.date}
-                    className={`date-separator ${stuckDateKey === item.key ? 'stuck-original' : ''}`}
-                  >
-                    <span className="date-text">{item.date}</span>
-                  </div>
-                ) : (
-                  <MessageBubble key={item.key} message={item.message} meName={globalUserName} />
-                )
-              )
+              <Virtuoso
+                ref={virtuosoRef}
+                data={groupedItems}
+                initialTopMostItemIndex={groupedItems.length - 1}
+                followOutput="smooth"
+                rangeChanged={handleRangeChanged}
+                itemContent={itemContent}
+                computeItemKey={computeItemKey}
+                components={{
+                  Scroller: ChatScroller,
+                  List: ChatListWrapper,
+                  Item: ChatItemContent,
+                }}
+                increaseViewportBy={{ top: 200, bottom: 200 }}
+              />
             )}
           </div>
         </>
@@ -569,6 +504,12 @@ export default function ChatWindow() {
           font-size: 14px;
         }
 
+        /* Virtuoso container */
+        .virtuoso-container {
+          display: flex;
+          flex-direction: column;
+        }
+
         /* WhatsApp wallpaper pattern */
         .chat-wallpaper {
           background-color: #0b141a;
@@ -576,6 +517,55 @@ export default function ChatWindow() {
             radial-gradient(circle at 20% 50%, rgba(0, 168, 132, 0.03) 0%, transparent 50%),
             radial-gradient(circle at 80% 20%, rgba(0, 168, 132, 0.02) 0%, transparent 40%),
             url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.015'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        }
+
+        /* Floating date badge */
+        .floating-date-badge {
+          position: absolute;
+          top: 8px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 15;
+          opacity: 0;
+          transition: opacity 0.3s ease;
+          pointer-events: none;
+        }
+        .floating-date-badge.visible {
+          opacity: 1;
+        }
+        .floating-date-badge .date-text {
+          color: rgba(225, 225, 225, 0.85);
+          font-weight: 500;
+          font-size: 12.5px;
+          letter-spacing: 0.3px;
+          text-transform: uppercase;
+          background: rgba(18, 28, 34, 0.92);
+          border-radius: 7px;
+          padding: 5px 16px;
+          box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+          display: inline-block;
+          backdrop-filter: blur(8px);
+        }
+
+        /* Date separator inside virtualized list */
+        .date-separator-virtual {
+          display: flex;
+          justify-content: center;
+          padding: 8px 0;
+          margin: 12px 0 4px 0;
+        }
+        
+        .date-separator-virtual .date-text {
+          color: rgba(225, 225, 225, 0.85);
+          font-weight: 500;
+          font-size: 12.5px;
+          letter-spacing: 0.3px;
+          text-transform: uppercase;
+          background: rgba(18, 28, 34, 0.85);
+          border-radius: 7px;
+          padding: 5px 16px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+          display: inline-block;
         }
 
         /* Search Container */
@@ -725,58 +715,6 @@ export default function ChatWindow() {
             padding: 8px 12px;
           }
         }
-        
-        /* Date separator */
-        .date-separator {
-          position: sticky;
-          top: 0;
-          z-index: 10;
-          display: flex;
-          justify-content: center;
-          padding: 8px 0;
-          margin: 16px 0 8px 0;
-          background: linear-gradient(to bottom, rgba(11, 20, 26, 0.95) 0%, rgba(11, 20, 26, 0.8) 60%, transparent 100%);
-          backdrop-filter: blur(6px);
-        }
-        
-        .date-text {
-          color: rgba(225, 225, 225, 0.85);
-          font-weight: 500;
-          font-size: 12.5px;
-          letter-spacing: 0.3px;
-          text-transform: uppercase;
-          background: rgba(18, 28, 34, 0.85);
-          border-radius: 7px;
-          padding: 5px 16px;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-          display: inline-block;
-        }
-        
-        .date-separator.stuck-original .date-text {
-          opacity: 0;
-          pointer-events: none;
-        }
-        
-        .date-separator.stuck-original::after {
-          content: attr(data-date);
-          position: absolute;
-          top: 8px;
-          left: 50%;
-          transform: translateX(-50%);
-          color: rgba(225, 225, 225, 0.85);
-          font-weight: 500;
-          font-size: 12.5px;
-          letter-spacing: 0.3px;
-          text-transform: uppercase;
-          background: rgba(18, 28, 34, 0.85);
-          border-radius: 7px;
-          padding: 5px 16px;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-          display: inline-block;
-          white-space: nowrap;
-          z-index: 11;
-          pointer-events: none;
-        }
       `}</style>
     </main>
   )
@@ -784,14 +722,14 @@ export default function ChatWindow() {
 
 function ClickableImage({ src, alt }) {
   const { openMedia, activeChatId } = useChat()
-  return <img src={src} alt={alt} onClick={() => openMedia(activeChatId, src)} style={{ cursor: 'zoom-in' }} />
+  return <img src={src} alt={alt} loading="lazy" onClick={() => openMedia(activeChatId, src)} style={{ cursor: 'zoom-in' }} />
 }
 
 function ClickableVideo({ src }) {
   const { openMedia, activeChatId } = useChat()
   return (
     <div onClick={() => openMedia(activeChatId, src)} style={{ cursor: 'zoom-in' }}>
-      <video src={src} controls />
+      <video src={src} controls preload="none" />
     </div>
   )
 }
@@ -800,7 +738,7 @@ function ClickableAudio({ src }) {
   const { openMedia, activeChatId } = useChat()
   return (
     <div onClick={() => openMedia(activeChatId, src)}>
-      <audio src={src} controls />
+      <audio src={src} controls preload="none" />
     </div>
   )
 }
@@ -808,13 +746,37 @@ function ClickableAudio({ src }) {
 function ClickablePdf({ src, name }) {
   const { openMedia, activeChatId } = useChat()
   return (
-    <PdfThumbnail src={src} name={name} onClick={() => openMedia(activeChatId, src)} />
+    <LazyPdfThumbnail src={src} name={name} onClick={() => openMedia(activeChatId, src)} />
   )
 }
 
-function PdfThumbnail({ src, name, onClick }) {
+/* ── Lazy PDF thumbnail: only renders when visible ── */
+function LazyPdfThumbnail({ src, name, onClick }) {
+  const [isVisible, setIsVisible] = useState(false)
   const [thumb, setThumb] = useState(null)
+  const containerRef = useRef(null)
+
+  // Observe visibility
   useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '200px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  // Render thumbnail only when visible
+  useEffect(() => {
+    if (!isVisible) return
     let cancelled = false
     async function renderThumb() {
       try {
@@ -837,15 +799,17 @@ function PdfThumbnail({ src, name, onClick }) {
     }
     renderThumb()
     return () => { cancelled = true }
-  }, [src])
+  }, [src, isVisible])
 
   return (
-    <div onClick={onClick} style={{ cursor: 'zoom-in', display: 'inline-flex', flexDirection: 'column', gap: 6 }}>
+    <div ref={containerRef} onClick={onClick} style={{ cursor: 'zoom-in', display: 'inline-flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ position: 'relative', width: 160, borderRadius: 6, overflow: 'hidden', background: '#1f2c33', border: '1px solid #0e171c' }}>
         {thumb ? (
           <img src={thumb} alt={name || 'PDF'} style={{ display: 'block', width: '100%' }} />
         ) : (
-          <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8696a0' }}>Loading PDF…</div>
+          <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8696a0' }}>
+            {isVisible ? 'Loading PDF…' : '📄 PDF'}
+          </div>
         )}
         <div style={{ position: 'absolute', top: 6, left: 6, background: '#000000a0', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 4 }}>PDF</div>
       </div>
@@ -853,5 +817,3 @@ function PdfThumbnail({ src, name, onClick }) {
     </div>
   )
 }
-
-

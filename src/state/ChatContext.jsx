@@ -104,6 +104,31 @@ export function ChatProvider({ children }) {
         ...prev,
         [chatId]: transformedMessages
       }))
+
+      // Auto-detect group name from first messages if chat has a generic name
+      if (transformedMessages.length > 0) {
+        const first10 = transformedMessages.slice(0, 10)
+        for (const msg of first10) {
+          // Match patterns like: created group "Hello", created group 'Hello', etc.
+          const groupMatch = msg.content.match(/created group\s+["'\u201C\u201D](.+?)["'\u201C\u201D]/i)
+          if (groupMatch && groupMatch[1]) {
+            const extractedName = groupMatch[1].trim()
+            setChats(prev => prev.map(c => {
+              const cId = c.id.toString()
+              const targetId = chatId.toString()
+              if (cId === targetId) {
+                // Only update if current name is generic
+                const isGeneric = /^(chat|_chat|_chat\.txt)$/i.test(c.name)
+                if (isGeneric) {
+                  return { ...c, name: extractedName }
+                }
+              }
+              return c
+            }))
+            break
+          }
+        }
+      }
     } catch (err) {
       console.error('Failed to fetch messages:', err)
       if (err?.status === 401) {

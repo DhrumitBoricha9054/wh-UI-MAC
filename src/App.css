@@ -104,10 +104,6 @@ body,
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 
 .messages input,
@@ -242,9 +238,7 @@ body,
 
   /* === Messages === */
   .messages {
-    padding: 10px 8px 8px 8px;
     font-size: 14px;
-    gap: 3px;
   }
 
   .bubble {
@@ -268,9 +262,7 @@ body,
 /* ============================================= */
 @media (max-width: 600px) {
   .messages {
-    padding: 8px 6px 6px 6px;
     font-size: 13.5px;
-    gap: 2px;
   }
 
   .bubble {
