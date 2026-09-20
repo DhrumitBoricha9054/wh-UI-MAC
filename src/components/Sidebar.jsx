@@ -1,10 +1,9 @@
 import { useChat } from '../state/ChatContext'
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 
 export default function Sidebar() {
-  const { chats, activeChatId, setActiveChatId, isSidebarOpen, closeSidebar, deleteChat, deleteMultipleChats, clearAllChats, globalUserName, isLoadingChats, mergeChats } = useChat()
-  const [isPerformingBulkAction, setIsPerformingBulkAction] = useState(false)
-  const [isDeletingSingle, setIsDeletingSingle] = useState(null) // chatId being deleted
+  const { chats, activeChatId, setActiveChatId, isSidebarOpen, closeSidebar, deleteChat, deleteMultipleChats, globalUserName, isLoadingChats, mergeChats, renameChat } = useChat()
+  const [isDeletingSingle] = useState(null) // chatId being deleted
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedChats, setSelectedChats] = useState(new Set())
   const [isSelectionMode, setIsSelectionMode] = useState(false)
@@ -19,6 +18,39 @@ export default function Sidebar() {
   const [isMerging, setIsMerging] = useState(false)
   const [mergeError, setMergeError] = useState(null)
   const [mergeResult, setMergeResult] = useState(null)
+
+  // Rename dialog state
+  const [renameDialog, setRenameDialog] = useState(null) // { chatId, currentName }
+  const [newChatNameInput, setNewChatNameInput] = useState('')
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameError, setRenameError] = useState(null)
+
+  const openRenameDialog = (chatId, currentName) => {
+    setRenameError(null)
+    setNewChatNameInput(currentName || '')
+    setRenameDialog({ chatId, currentName })
+  }
+
+  const closeRenameDialog = () => {
+    if (!isRenaming) {
+      setRenameDialog(null)
+      setRenameError(null)
+    }
+  }
+
+  const handleConfirmRename = async () => {
+    if (!renameDialog || !newChatNameInput.trim()) return
+    setIsRenaming(true)
+    setRenameError(null)
+    try {
+      await renameChat(renameDialog.chatId, newChatNameInput.trim())
+      setRenameDialog(null)
+    } catch (err) {
+      setRenameError(err.message || 'Failed to rename chat')
+    } finally {
+      setIsRenaming(false)
+    }
+  }
 
   const openDeleteDialog = (type, { chatId, chatName, count } = {}) => {
     setDeleteError(null)
@@ -345,20 +377,34 @@ export default function Sidebar() {
                   </div>
                 </div>
 
-                {/* Delete Button */}
-                <button
-                  className="delete-chat-btn"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openDeleteDialog('single', { chatId: chat.id, chatName: displayName })
-                  }}
-                  title="Delete chat"
-                  disabled={isDeletingSingle === chat.id}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
+                {/* Chat Action Buttons */}
+                <div className="chat-item-actions">
+                  <button
+                    className="rename-chat-btn"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openRenameDialog(chat.id, displayName)
+                    }}
+                    title="Rename group / chat"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                  <button
+                    className="delete-chat-btn"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openDeleteDialog('single', { chatId: chat.id, chatName: displayName })
+                    }}
+                    title="Delete chat"
+                    disabled={isDeletingSingle === chat.id}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                      <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             )
           })}
@@ -482,6 +528,61 @@ export default function Sidebar() {
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Rename Chat Dialog */}
+      {renameDialog && (
+        <div className="delete-dialog-overlay" onClick={closeRenameDialog}>
+          <div className="delete-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="delete-dialog-icon rename-icon" style={{ background: 'rgba(0, 168, 132, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="#00a884" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <h3 className="delete-dialog-title">Rename Chat / Group</h3>
+            <p className="delete-dialog-message">
+              Enter a new name for this chat or group.
+            </p>
+            <input
+              type="text"
+              className="search-input"
+              style={{ width: '100%', marginBottom: 12, paddingLeft: 12, fontSize: 15 }}
+              value={newChatNameInput}
+              onChange={(e) => setNewChatNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleConfirmRename()
+                if (e.key === 'Escape') closeRenameDialog()
+              }}
+              placeholder="Chat / group name..."
+              autoFocus
+            />
+            {renameError && (
+              <div className="delete-dialog-error" style={{ marginBottom: 12 }}>{renameError}</div>
+            )}
+            <div className="delete-dialog-actions">
+              <button
+                className="delete-dialog-cancel"
+                onClick={closeRenameDialog}
+                disabled={isRenaming}
+              >
+                Cancel
+              </button>
+              <button
+                className="merge-dialog-confirm"
+                style={{ background: '#00a884' }}
+                onClick={handleConfirmRename}
+                disabled={isRenaming || !newChatNameInput.trim()}
+              >
+                {isRenaming ? (
+                  <>
+                    <span className="btn-spinner"></span>
+                    Saving...
+                  </>
+                ) : 'Save Name'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -757,25 +858,37 @@ export default function Sidebar() {
           line-height: 1.3;
         }
         
-        .delete-chat-btn {
+        .chat-item-actions {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          opacity: 0;
+          transition: opacity 0.2s ease;
+        }
+
+        .chat-item:hover .chat-item-actions {
+          opacity: 1;
+        }
+
+        .rename-chat-btn, .delete-chat-btn {
           background: none;
           border: none;
           color: #8696a0;
           cursor: pointer;
-          padding: 8px;
+          padding: 6px;
           border-radius: 6px;
           transition: all 0.2s ease;
-          opacity: 0;
           display: flex;
           align-items: center;
           justify-content: center;
           flex-shrink: 0;
         }
-        
-        .chat-item:hover .delete-chat-btn {
-          opacity: 1;
+
+        .rename-chat-btn:hover {
+          color: #00a884;
+          background: rgba(0, 168, 132, 0.15);
         }
-        
+
         .delete-chat-btn:hover {
           color: #e74c3c;
           background: rgba(231, 76, 60, 0.1);

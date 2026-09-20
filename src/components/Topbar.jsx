@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useChat } from '../state/ChatContext'
-import { apiUploadZip, apiUploadPreview, apiUploadConfirm } from '../lib/api'
+import { apiUploadPreview, apiUploadConfirm } from '../lib/api'
 
 
 async function apiChangePassword(oldPassword, newPassword, token) {
@@ -19,7 +19,7 @@ async function apiChangePassword(oldPassword, newPassword, token) {
 
 export default function Topbar() {
   const inputRef = useRef(null)
-  const { importFromZip, toggleSidebar, logout, goBack, globalUserName, setGlobalName, importStats, fetchChatsFromAPI, activeChatId, chats, messagesByChatId } = useChat()
+  const { importFromZip, toggleSidebar, logout, goBack, globalUserName, setGlobalName, importStats, fetchChatsFromAPI, activeChatId, chats, messagesByChatId, renameChat } = useChat()
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -31,6 +31,26 @@ export default function Topbar() {
   const [pwdSuccess, setPwdSuccess] = useState('')
   const [zipResponse, setZipResponse] = useState(null)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
+
+  // Header Rename Modal state
+  const [showHeaderRenameModal, setShowHeaderRenameModal] = useState(false)
+  const [headerRenameInput, setHeaderRenameInput] = useState('')
+  const [headerRenameLoading, setHeaderRenameLoading] = useState(false)
+  const [headerRenameError, setHeaderRenameError] = useState('')
+
+  const handleSaveHeaderRename = async () => {
+    if (!activeChatId || !headerRenameInput.trim()) return
+    setHeaderRenameLoading(true)
+    setHeaderRenameError('')
+    try {
+      await renameChat(activeChatId, headerRenameInput.trim())
+      setShowHeaderRenameModal(false)
+    } catch (err) {
+      setHeaderRenameError(err.message || 'Failed to rename chat')
+    } finally {
+      setHeaderRenameLoading(false)
+    }
+  }
 
   // Two-step import state
   const [showPreviewModal, setShowPreviewModal] = useState(false)
@@ -264,7 +284,25 @@ export default function Topbar() {
             {getActiveChatDisplayName().charAt(0).toUpperCase()}
           </div>
           <div className="chat-details">
-            <div className="chat-name">{getActiveChatDisplayName()}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div className="chat-name">{getActiveChatDisplayName()}</div>
+              {activeChat && (
+                <button
+                  className="rename-header-btn"
+                  onClick={() => {
+                    setHeaderRenameError('')
+                    setHeaderRenameInput(activeChat.name || getActiveChatDisplayName())
+                    setShowHeaderRenameModal(true)
+                  }}
+                  title="Rename chat / group"
+                  style={{ background: 'none', border: 'none', color: '#8696a0', cursor: 'pointer', padding: 2, display: 'inline-flex', alignItems: 'center' }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              )}
+            </div>
             <div className="chat-status">
               {(() => {
                 if (!activeChat) return ''
@@ -644,6 +682,60 @@ export default function Topbar() {
           </div>
           <div className="progress-text">
             Uploading ZIP file... {Math.round(uploadProgress)}%
+          </div>
+        </div>
+      )}
+
+      {/* Header Rename Modal */}
+      {showHeaderRenameModal && (
+        <div className="preview-modal-overlay" onClick={() => !headerRenameLoading && setShowHeaderRenameModal(false)}>
+          <div className="preview-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+            <div className="preview-modal-header">
+              <h2 className="preview-modal-title">Rename Chat / Group</h2>
+              <button
+                className="close-btn"
+                onClick={() => !headerRenameLoading && setShowHeaderRenameModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: '16px 0' }}>
+              <p style={{ color: '#8696a0', fontSize: 14, marginBottom: 12 }}>
+                Enter a new custom name for this group or chat:
+              </p>
+              <input
+                type="text"
+                className="user-input"
+                style={{ width: '100%', fontSize: 15, padding: '10px 12px', background: '#1f2c33', border: '1px solid #2a3942', borderRadius: 8, color: '#e9edef', outline: 'none' }}
+                value={headerRenameInput}
+                onChange={(e) => setHeaderRenameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveHeaderRename()
+                  if (e.key === 'Escape') setShowHeaderRenameModal(false)
+                }}
+                placeholder="Group / Chat name..."
+                autoFocus
+              />
+              {headerRenameError && (
+                <div style={{ color: '#ff6b6b', fontSize: 13, marginTop: 8 }}>{headerRenameError}</div>
+              )}
+            </div>
+            <div className="preview-modal-actions" style={{ justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                className="preview-cancel-btn"
+                onClick={() => setShowHeaderRenameModal(false)}
+                disabled={headerRenameLoading}
+              >
+                Cancel
+              </button>
+              <button
+                className="preview-import-btn"
+                onClick={handleSaveHeaderRename}
+                disabled={headerRenameLoading || !headerRenameInput.trim()}
+              >
+                {headerRenameLoading ? 'Saving...' : 'Save Name'}
+              </button>
+            </div>
           </div>
         </div>
       )}

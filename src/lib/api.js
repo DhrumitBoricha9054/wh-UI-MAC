@@ -204,3 +204,25 @@ export async function apiMergeChats(chatIds, token) {
   }
   return data
 }
+
+export async function apiRenameChat(id, name, token) {
+  if (!id) throw new Error('chat id required')
+  if (!name || !name.trim()) throw new Error('chat name required')
+
+  const res = await fetch(`${getApiBase()}/chats/${id}`, {
+    method: 'PATCH',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ name: name.trim() })
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const message = data?.error || 'Failed to rename chat'
+    const err = new Error(message)
+    err.status = res.status
+    throw err
+  }
+  return data
+}
