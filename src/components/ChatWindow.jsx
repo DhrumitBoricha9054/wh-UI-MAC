@@ -219,25 +219,46 @@ export default function ChatWindow() {
     return groupMessagesByDate(filteredMessages)
   }, [filteredMessages, groupMessagesByDate])
 
-  // Track floating date from visible range
-  const handleRangeChanged = useCallback(({ startIndex }) => {
-    // Find the most recent date separator at or before startIndex
-    for (let i = startIndex; i >= 0; i--) {
+  // Pre-index date markers for fast O(log N) lookup during scrolling instead of linear O(N) loops
+  const dateMarkers = useMemo(() => {
+    const markers = []
+    for (let i = 0; i < groupedItems.length; i++) {
       if (groupedItems[i]?.type === 'date') {
-        setFloatingDate(groupedItems[i].date)
-        break
+        markers.push({ index: i, date: groupedItems[i].date })
+      }
+    }
+    return markers
+  }, [groupedItems])
+
+  // Track floating date from visible range efficiently with binary search
+  const handleRangeChanged = useCallback(({ startIndex }) => {
+    if (dateMarkers.length === 0) return
+
+    let low = 0
+    let high = dateMarkers.length - 1
+    let foundDate = null
+
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2)
+      if (dateMarkers[mid].index <= startIndex) {
+        foundDate = dateMarkers[mid].date
+        low = mid + 1
+      } else {
+        high = mid - 1
       }
     }
 
-    // Show floating date briefly on scroll
-    setShowFloatingDate(true)
-    if (floatingDateTimeoutRef.current) {
-      clearTimeout(floatingDateTimeoutRef.current)
+    if (foundDate) {
+      setFloatingDate(prev => (prev === foundDate ? prev : foundDate))
+      setShowFloatingDate(true)
+      if (floatingDateTimeoutRef.current) {
+        clearTimeout(floatingDateTimeoutRef.current)
+      }
+      floatingDateTimeoutRef.current = setTimeout(() => {
+        setShowFloatingDate(false)
+      }, 1500)
     }
-    floatingDateTimeoutRef.current = setTimeout(() => {
-      setShowFloatingDate(false)
-    }, 1500)
-  }, [groupedItems])
+  }, [dateMarkers])
 
   // Find next/previous search result
   const findNextResult = useCallback((direction = 1) => {
@@ -425,7 +446,9 @@ export default function ChatWindow() {
                 ref={virtuosoRef}
                 data={groupedItems}
                 initialTopMostItemIndex={groupedItems.length - 1}
-                followOutput="smooth"
+                alignToBottom
+                followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
+                defaultItemHeight={68}
                 rangeChanged={handleRangeChanged}
                 itemContent={itemContent}
                 computeItemKey={computeItemKey}
@@ -434,7 +457,7 @@ export default function ChatWindow() {
                   List: ChatListWrapper,
                   Item: ChatItemContent,
                 }}
-                increaseViewportBy={{ top: 200, bottom: 200 }}
+                increaseViewportBy={{ top: 1200, bottom: 600 }}
               />
             )}
           </div>
@@ -725,14 +748,22 @@ export default function ChatWindow() {
 
 function ClickableImage({ src, alt }) {
   const { openMedia, activeChatId } = useChat()
-  return <img src={src} alt={alt} loading="lazy" onClick={() => openMedia(activeChatId, src)} style={{ cursor: 'zoom-in' }} />
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      onClick={() => openMedia(activeChatId, src)}
+      style={{ cursor: 'zoom-in', minHeight: '120px', maxHeight: '360px', objectFit: 'cover' }}
+    />
+  )
 }
 
 function ClickableVideo({ src }) {
   const { openMedia, activeChatId } = useChat()
   return (
     <div onClick={() => openMedia(activeChatId, src)} style={{ cursor: 'zoom-in' }}>
-      <video src={src} controls preload="none" />
+      <video src={src} controls preload="none" style={{ minHeight: '140px', maxHeight: '360px', objectFit: 'cover' }} />
     </div>
   )
 }
