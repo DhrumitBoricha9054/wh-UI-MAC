@@ -205,6 +205,73 @@ export async function apiMergeChats(chatIds, token) {
   return data
 }
 
+function authHeaders(token, json = false) {
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+  }
+}
+
+function throwApiError(res, data, fallback) {
+  const message = data?.error || fallback
+  const err = new Error(message)
+  err.status = res.status
+  if (res.status === 401) {
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('auth_user')
+    window.location.href = '/'
+  }
+  throw err
+}
+
+export async function apiGetMessageDateRange(chatId, token) {
+  if (!chatId) throw new Error('chat id required')
+  const res = await fetch(`${getApiBase()}/chats/${chatId}/messages/date-range`, {
+    method: 'GET',
+    headers: authHeaders(token),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throwApiError(res, data, 'Failed to fetch message date range')
+  return data
+}
+
+export async function apiPreviewMessagesByDate(chatId, { startDate, endDate } = {}, token) {
+  if (!chatId) throw new Error('chat id required')
+  const params = new URLSearchParams({ startDate, endDate })
+  const res = await fetch(`${getApiBase()}/chats/${chatId}/messages/by-date?${params}`, {
+    method: 'GET',
+    headers: authHeaders(token),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throwApiError(res, data, 'Failed to preview messages for date range')
+  return data
+}
+
+export async function apiDeleteMessagesByDate(chatId, { startDate, endDate } = {}, token) {
+  if (!chatId) throw new Error('chat id required')
+  if (!startDate || !endDate) throw new Error('startDate and endDate are required')
+  const res = await fetch(`${getApiBase()}/chats/${chatId}/messages/by-date`, {
+    method: 'DELETE',
+    headers: authHeaders(token, true),
+    body: JSON.stringify({ startDate, endDate }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throwApiError(res, data, 'Failed to delete messages by date')
+  return data
+}
+
+export async function apiDeleteMessage(chatId, messageId, token) {
+  if (!chatId) throw new Error('chat id required')
+  if (!messageId) throw new Error('message id required')
+  const res = await fetch(`${getApiBase()}/chats/${chatId}/messages/${messageId}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throwApiError(res, data, 'Failed to delete message')
+  return data
+}
+
 export async function apiRenameChat(id, name, token) {
   if (!id) throw new Error('chat id required')
   if (!name || !name.trim()) throw new Error('chat name required')

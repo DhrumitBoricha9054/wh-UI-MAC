@@ -1,5 +1,6 @@
 import { useMemo, useEffect, useState, useRef, memo, useCallback, forwardRef } from 'react'
 import { useChat } from '../state/ChatContext'
+import DeleteByDateModal, { DeleteByDateButton } from './DeleteByDateModal'
 import { Virtuoso } from 'react-virtuoso'
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist'
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -155,6 +156,7 @@ export default function ChatWindow() {
   const [highlightedMessageId, setHighlightedMessageId] = useState(null)
   const virtuosoRef = useRef(null)
   const floatingDateTimeoutRef = useRef(null)
+  const [showDeleteByDate, setShowDeleteByDate] = useState(false)
 
   // Helper to format date as WhatsApp style (e.g., Fri, 3 Oct)
   const formatDate = useCallback((ts) => {
@@ -284,6 +286,7 @@ export default function ChatWindow() {
     setCurrentMessageIndex(-1)
     setIsSearchOpen(false)
     setHighlightedMessageId(null)
+    setShowDeleteByDate(false)
   }, [activeChatId])
 
   // Render each item in the virtuoso list
@@ -328,6 +331,14 @@ export default function ChatWindow() {
           <span>Loading messages...</span>
         </div>
       )}
+      {activeChat && (
+        <DeleteByDateModal
+          open={showDeleteByDate}
+          onClose={() => setShowDeleteByDate(false)}
+          chatId={activeChatId}
+          chatName={activeChat.name}
+        />
+      )}
       {activeChat && !isLoadingMessages && (
         <>
           {/* Message Search Bar - collapsible on mobile */}
@@ -365,6 +376,7 @@ export default function ChatWindow() {
                   }}
                 />
               </div>
+              <DeleteByDateButton onClick={() => setShowDeleteByDate(true)} />
               {messageSearchQuery && (
                 <>
                   <div className="search-results-info">

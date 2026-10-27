@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useChat } from '../state/ChatContext'
 import { apiUploadPreview, apiUploadConfirm } from '../lib/api'
+import DeleteByDateModal, { DeleteByDateButton } from './DeleteByDateModal'
 
 
 async function apiChangePassword(oldPassword, newPassword, token) {
@@ -31,6 +32,7 @@ export default function Topbar() {
   const [pwdSuccess, setPwdSuccess] = useState('')
   const [zipResponse, setZipResponse] = useState(null)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
+  const [showDeleteByDate, setShowDeleteByDate] = useState(false)
 
   // Header Rename Modal state
   const [showHeaderRenameModal, setShowHeaderRenameModal] = useState(false)
@@ -319,6 +321,9 @@ export default function Topbar() {
             </div>
           </div>
         </div>
+        {activeChat && (
+          <DeleteByDateButton variant="icon" onClick={() => setShowDeleteByDate(true)} />
+        )}
       </div>
 
       {/* === DESKTOP: Full Topbar === */}
@@ -684,6 +689,15 @@ export default function Topbar() {
             Uploading ZIP file... {Math.round(uploadProgress)}%
           </div>
         </div>
+      )}
+
+      {activeChat && (
+        <DeleteByDateModal
+          open={showDeleteByDate}
+          onClose={() => setShowDeleteByDate(false)}
+          chatId={activeChatId}
+          chatName={activeChat.name}
+        />
       )}
 
       {/* Header Rename Modal */}

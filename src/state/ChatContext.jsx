@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, useEffect } from 'react'
 import JSZip from 'jszip'
 import { parseWhatsAppText, inferMediaType } from '../lib/whatsappParser'
-import { apiGetChats, apiGetMessages, getApiBase, apiDeleteAllChats, apiDeleteSelectedChats, apiDeleteChat, apiMergeChats, apiRenameChat } from '../lib/api'
+import { apiGetChats, apiGetMessages, getApiBase, apiDeleteAllChats, apiDeleteSelectedChats, apiDeleteChat, apiMergeChats, apiRenameChat, apiDeleteMessagesByDate } from '../lib/api'
 
 const ChatContext = createContext(null)
 
@@ -589,6 +589,25 @@ export function ChatProvider({ children }) {
     return { ok: true }
   }, [fetchChatsFromAPI])
 
+  const deleteMessagesByDate = useCallback(async (chatId, startDate, endDate) => {
+    if (!chatId) return { ok: false }
+    const token = localStorage.getItem('auth_token')
+    if (!token) {
+      const err = new Error('Unauthorized')
+      err.status = 401
+      throw err
+    }
+
+    const res = await apiDeleteMessagesByDate(chatId, { startDate, endDate }, token)
+    await fetchMessagesForChat(chatId)
+    try {
+      await fetchChatsFromAPI()
+    } catch {
+      // Chat list refresh is optional; the open chat already reloaded.
+    }
+    return res
+  }, [fetchMessagesForChat, fetchChatsFromAPI])
+
   const value = useMemo(() => ({
     chats,
     activeChatId,
@@ -619,7 +638,8 @@ export function ChatProvider({ children }) {
     logout,
     mergeChats,
     renameChat,
-  }), [chats, activeChatId, setActiveChatIdWithMessages, importFromZip, isSidebarOpen, toggleSidebar, closeSidebar, globalUserName, setGlobalName, myNameByChatId, setMyName, viewer, openMedia, closeMedia, stepMedia, importStats, deleteChat, deleteMultipleChats, clearAllChats, fetchChatsFromAPI, isLoadingChats, fetchMessagesForChat, isLoadingMessages, messagesByChatId, loadMoreMessages, goBack, logout, mergeChats, renameChat])
+    deleteMessagesByDate,
+  }), [chats, activeChatId, setActiveChatIdWithMessages, importFromZip, isSidebarOpen, toggleSidebar, closeSidebar, globalUserName, setGlobalName, myNameByChatId, setMyName, viewer, openMedia, closeMedia, stepMedia, importStats, deleteChat, deleteMultipleChats, clearAllChats, fetchChatsFromAPI, isLoadingChats, fetchMessagesForChat, isLoadingMessages, messagesByChatId, loadMoreMessages, goBack, logout, mergeChats, renameChat, deleteMessagesByDate])
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
 }
