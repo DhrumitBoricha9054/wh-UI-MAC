@@ -4,12 +4,14 @@ import Topbar from './components/Topbar';
 import Sidebar from './components/Sidebar';
 import ChatWindow from './components/ChatWindow';
 import MediaViewer from './components/MediaViewer';
+import DeleteByDateModal from './components/DeleteByDateModal';
 import Login from './components/Login';
 import './components/Login.css';
 import { useEffect, useState } from 'react';
 
 function MainApp() {
-  const { activeChatId } = useChat();
+  const { activeChatId, chats, showDeleteByDateModal, closeDeleteByDateModal } = useChat();
+  const activeChat = chats.find((c) => c.id === activeChatId);
 
   return (
     <div className={`app ${activeChatId ? 'chat-active' : 'chat-list-active'}`}>
@@ -19,6 +21,14 @@ function MainApp() {
         <ChatWindow />
       </div>
       <MediaViewer />
+      {activeChat && (
+        <DeleteByDateModal
+          open={showDeleteByDateModal}
+          onClose={closeDeleteByDateModal}
+          chatId={activeChatId}
+          chatName={activeChat.name}
+        />
+      )}
     </div>
   );
 }

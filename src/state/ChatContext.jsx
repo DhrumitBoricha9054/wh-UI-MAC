@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, useEffect } from 'react'
 import JSZip from 'jszip'
 import { parseWhatsAppText, inferMediaType } from '../lib/whatsappParser'
-import { apiGetChats, apiGetMessages, getApiBase, apiDeleteAllChats, apiDeleteSelectedChats, apiDeleteChat, apiMergeChats, apiRenameChat, apiDeleteMessagesByDate } from '../lib/api'
+import { apiGetChats, apiGetMessages, getApiBase, apiDeleteAllChats, apiDeleteSelectedChats, apiDeleteChat, apiMergeChats, apiRenameChat, apiDeleteMessagesByDate, apiDeleteMessage } from '../lib/api'
 
 const ChatContext = createContext(null)
 
@@ -19,6 +19,15 @@ export function ChatProvider({ children }) {
   const [isLoadingChats, setIsLoadingChats] = useState(false)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [messagesByChatId, setMessagesByChatId] = useState({})
+  const [showDeleteByDateModal, setShowDeleteByDateModal] = useState(false)
+
+  const openDeleteByDateModal = useCallback(() => {
+    setShowDeleteByDateModal(true)
+  }, [])
+
+  const closeDeleteByDateModal = useCallback(() => {
+    setShowDeleteByDateModal(false)
+  }, [])
 
   // Fetch chats from API
   const fetchChatsFromAPI = useCallback(async () => {
@@ -343,6 +352,7 @@ export function ChatProvider({ children }) {
   // Go back to chat list (mobile navigation)
   const goBack = useCallback(() => {
     setActiveChatId(null)
+    setShowDeleteByDateModal(false)
   }, [])
 
   // Logout
@@ -502,11 +512,13 @@ export function ChatProvider({ children }) {
 
     setChats([])
     setActiveChatId(null)
+    setShowDeleteByDateModal(false)
     setViewer({ open: false, chatId: null, index: 0, mediaList: [] })
   }, [])
 
   // Enhanced setActiveChatId that also fetches messages
   const setActiveChatIdWithMessages = useCallback((chatId) => {
+    setShowDeleteByDateModal(false)
     setActiveChatId(chatId)
     if (chatId && !messagesByChatId[chatId]) {
       fetchMessagesForChat(chatId)
@@ -599,17 +611,52 @@ export function ChatProvider({ children }) {
     }
 
     const res = await apiDeleteMessagesByDate(chatId, { startDate, endDate }, token)
+    // Reload messages for this chat only
     await fetchMessagesForChat(chatId)
-    try {
-      await fetchChatsFromAPI()
-    } catch {
-      // Chat list refresh is optional; the open chat already reloaded.
-    }
+
+    // Update message count for this chat in sidebar without refetching all chats
+    const deletedCount = res?.deleted ?? 0
+    setChats(prevChats => prevChats.map(c => {
+      if (c.id === chatId.toString()) {
+        const currentCount = c.messageCount || 0
+        return {
+          ...c,
+          messageCount: Math.max(0, currentCount - deletedCount)
+        }
+      }
+      return c
+    }))
+
     return res
-  }, [fetchMessagesForChat, fetchChatsFromAPI])
+  }, [fetchMessagesForChat])
+
+  // Single message deletion
+  const deleteMessage = useCallback(async (chatId, messageId) => {
+    if (!chatId || !messageId) return { ok: false }
+    const token = localStorage.getItem('auth_token')
+    if (!token) {
+      const err = new Error('Unauthorized')
+      err.status = 401
+      throw err
+    }
+
+    const res = await apiDeleteMessage(chatId, messageId, token)
+    await fetchMessagesForChat(chatId)
+    setChats(prevChats => prevChats.map(c => {
+      if (c.id === chatId.toString()) {
+        return {
+          ...c,
+          messageCount: Math.max(0, (c.messageCount || 1) - 1)
+        }
+      }
+      return c
+    }))
+    return res
+  }, [fetchMessagesForChat])
 
   const value = useMemo(() => ({
     chats,
+    setChats,
     activeChatId,
     setActiveChatId: setActiveChatIdWithMessages,
     importFromZip,
@@ -639,7 +686,11 @@ export function ChatProvider({ children }) {
     mergeChats,
     renameChat,
     deleteMessagesByDate,
-  }), [chats, activeChatId, setActiveChatIdWithMessages, importFromZip, isSidebarOpen, toggleSidebar, closeSidebar, globalUserName, setGlobalName, myNameByChatId, setMyName, viewer, openMedia, closeMedia, stepMedia, importStats, deleteChat, deleteMultipleChats, clearAllChats, fetchChatsFromAPI, isLoadingChats, fetchMessagesForChat, isLoadingMessages, messagesByChatId, loadMoreMessages, goBack, logout, mergeChats, renameChat, deleteMessagesByDate])
+    deleteMessage,
+    showDeleteByDateModal,
+    openDeleteByDateModal,
+    closeDeleteByDateModal,
+  }), [chats, activeChatId, setActiveChatIdWithMessages, importFromZip, isSidebarOpen, toggleSidebar, closeSidebar, globalUserName, setGlobalName, myNameByChatId, setMyName, viewer, openMedia, closeMedia, stepMedia, importStats, deleteChat, deleteMultipleChats, clearAllChats, fetchChatsFromAPI, isLoadingChats, fetchMessagesForChat, isLoadingMessages, messagesByChatId, loadMoreMessages, goBack, logout, mergeChats, renameChat, deleteMessagesByDate, deleteMessage, showDeleteByDateModal, openDeleteByDateModal, closeDeleteByDateModal])
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
 }

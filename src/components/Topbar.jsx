@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useChat } from '../state/ChatContext'
 import { apiUploadPreview, apiUploadConfirm } from '../lib/api'
-import DeleteByDateModal, { DeleteByDateButton } from './DeleteByDateModal'
+import { DeleteByDateButton } from './DeleteByDateModal'
 
 
 async function apiChangePassword(oldPassword, newPassword, token) {
@@ -20,7 +20,7 @@ async function apiChangePassword(oldPassword, newPassword, token) {
 
 export default function Topbar() {
   const inputRef = useRef(null)
-  const { importFromZip, toggleSidebar, logout, goBack, globalUserName, setGlobalName, importStats, fetchChatsFromAPI, activeChatId, chats, messagesByChatId, renameChat } = useChat()
+  const { importFromZip, toggleSidebar, logout, goBack, globalUserName, setGlobalName, importStats, fetchChatsFromAPI, activeChatId, chats, messagesByChatId, renameChat, openDeleteByDateModal } = useChat()
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -32,7 +32,6 @@ export default function Topbar() {
   const [pwdSuccess, setPwdSuccess] = useState('')
   const [zipResponse, setZipResponse] = useState(null)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
-  const [showDeleteByDate, setShowDeleteByDate] = useState(false)
 
   // Header Rename Modal state
   const [showHeaderRenameModal, setShowHeaderRenameModal] = useState(false)
@@ -322,7 +321,7 @@ export default function Topbar() {
           </div>
         </div>
         {activeChat && (
-          <DeleteByDateButton variant="icon" onClick={() => setShowDeleteByDate(true)} />
+          <DeleteByDateButton variant="icon" onClick={openDeleteByDateModal} />
         )}
       </div>
 
@@ -691,14 +690,6 @@ export default function Topbar() {
         </div>
       )}
 
-      {activeChat && (
-        <DeleteByDateModal
-          open={showDeleteByDate}
-          onClose={() => setShowDeleteByDate(false)}
-          chatId={activeChatId}
-          chatName={activeChat.name}
-        />
-      )}
 
       {/* Header Rename Modal */}
       {showHeaderRenameModal && (
